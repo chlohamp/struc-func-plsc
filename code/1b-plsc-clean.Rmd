@@ -1,0 +1,367 @@
+---
+title: "ABCD Year 4 Structure-Function PLSC: rs-FC x `r toupper(params$block)`"
+params:
+  block: rni
+author: "Chloe Hampson, Taylor Jancetic, Kirthana"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    fontsize : 9 pt
+    theme: united
+    code_folding: hide
+    toc: true
+    toc_float: true
+    toc_depth: 6
+---
+
+<!--
+HOW TO RUN
+This file runs ONE PLSC: rs-FC x RNI (cellular density) or rs-FC x RND
+(neurite density). Pick which with the `block` parameter.
+  Local (RStudio):  working directory = code/, then "Knit with Parameters..."
+                    (or edit `block:` above) - uses the fake data automatically.
+  Local (terminal): cd code
+                    Rscript -e "rmarkdown::render('1b-plsc-clean.Rmd', params = list(block = 'rni'))"
+                    Rscript -e "rmarkdown::render('1b-plsc-clean.Rmd', params = list(block = 'rnd'))"
+  HPC:              sbatch hpc/1b-plsc.sbatch   (array job: runs rni and rnd in parallel)
+All paths come from config.R. Outputs go to derivatives/plsc-<block>/.
+-->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Import Libraries
+```{r libraries}
+graphics.off() # Clear all plots
+
+library(plyr) # Data manipulation (load first to avoid conflicts)
+library(dplyr) # Data manipulation
+library(tidyverse) # Core tidyverse packages
+library(ExPosition) # Multivariate data analysis
+library(TExPosition) # Two-table ExPosition analysis (tepPLS)
+library(PTCA4CATA) # perm4PLSC, Boot4PLSC, PlotScree, PrettyBarPlot2
+library(data4PCCAR) # Helpers for PCA/PLS
+library(corrplot) # Correlation plots
+library(ggplot2) # Data visualization
+library(readr) # Reading data files
+library(kableExtra)
+
+# Paths, iteration counts and variable lists all live in config.R
+source(file.path(Sys.getenv("PLSC_CODE_DIR", "."), "config.R"))
+
+# Which PLSC? params$block when knitting; PLSC_BLOCK env var otherwise
+# (e.g. when the HPC falls back to running the purl'd R code).
+block <- Sys.getenv("PLSC_BLOCK", unset = "")
+if (!nzchar(block)) block <- if (exists("params")) params$block else "rni"
+sb   <- struct_blocks[[block]]
+dirs <- plsc_dirs(block)
+out_dir <- dirs$plsc; fig_dir <- dirs$fig
+cat("Running PLSC: rs-FC x", sb$label, "\nOutputs:", out_dir, "\n")
+```
+
+**Data:** output of `1a-extract-abcd.R` (Year 4) - the functional block (rs-FC, 78 Gordon network connections) and one microarchitecture block (RNI or RND, 68 Desikan cortical GM ROIs), row-aligned by `participant_id`, plus covariates. Both PLSCs use the same participants.
+
+```{r load-data}
+covar_df <- read_csv(file.path(deriv_dir, "covariate.csv"), show_col_types = FALSE)
+rsfc_df  <- read_csv(file.path(deriv_dir, "clean-rsfc.csv"), show_col_types = FALSE)
+smri_df  <- read_csv(file.path(deriv_dir, sprintf("clean-%s.csv", block)), show_col_types = FALSE)
+
+stopifnot(identical(covar_df[[id_col]], rsfc_df[[id_col]]),
+          identical(covar_df[[id_col]], smri_df[[id_col]]))
+subj_ids <- covar_df[[id_col]]
+
+cat(sprintf("Environment: %s | N = %d | rs-FC features = %d | %s features = %d | nIter = %d\n",
+            PLSC_ENV, length(subj_ids), ncol(rsfc_df) - 1, toupper(block), ncol(smri_df) - 1, n_iter_perm))
+```
+
+## Performing residualization
+
+Each block is regressed on the covariates in `config.R` (`resid_covars_rsfc` with rs-fMRI motion, `resid_covars_struct` with dMRI motion); the residuals go into the PLSC.
+
+```{r resid-fn}
+resid_block <- function(block_df, covs) {
+  Y <- as.matrix(block_df[, setdiff(colnames(block_df), id_col)])
+  terms <- ifelse(covs %in% c(categorical_covars, "site_id_l"), paste0("as.factor(", covs, ")"), covs)
+  fml <- as.formula(paste("Y ~", paste(terms, collapse = " + ")))
+  fit <- lm(fml, data = covar_df, na.action = na.exclude)
+  res <- as.data.frame(residuals(fit))
+  rownames(res) <- subj_ids
+  list(fit = fit, resid = res, formula = fml)
+}
+```
+
+###  MLRM for resting-state (function) data
+
+```{r resid-rsfc}
+Group1 <- resid_block(rsfc_df, resid_covars_rsfc)
+print(Group1$formula)
+Group1_residuals <- Group1$resid
+```
+
+### MLRM for microarchitecture (RNI / RND) data
+
+```{r resid-smri}
+Group2 <- resid_block(smri_df, resid_covars_struct)
+print(Group2$formula)
+Group2_residuals <- Group2$resid
+```
+
+
+## PLSC Analysis
+
+### 1. Correlation plots
+
+```{r corrplot}
+# Input data for PLSC
+data1 <- as.data.frame(Group1_residuals)   # function  (rs-FC)
+data2 <- as.data.frame(Group2_residuals)   # structure (RNI or RND)
+
+XY.cor.pearson <- cor(data2, data1)
+write.csv(XY.cor.pearson, file.path(out_dir, sprintf("%s-x-rsfc_correlation.csv", block)))
+
+# Symmetric colour limits that always cover the data (corrplot errors otherwise)
+lim <- max(0.25, ceiling(max(abs(XY.cor.pearson)) * 20) / 20)
+
+png(file.path(fig_dir, "correlation_plot.png"), width = 2400, height = 2000, res = 300)
+corrplot(XY.cor.pearson,
+  is.corr = FALSE,
+  method = "color",
+  col.lim = c(-lim, lim),
+  tl.cex = 0.2, tl.col = "black",
+  cl.pos = "b", cl.cex = 0.3,
+  title = paste0("Pearson Correlation: ", toupper(block), " (rows) x rs-FC (cols)"),
+  cex.main = 0.6,
+  mar = c(0, 0, 1, 0),
+  lwd = 0.1,
+  col = colorRampPalette(c("darkred", "white", "midnightblue"))(6)
+)
+invisible(dev.off())
+```
+
+
+### 2. Package details
+
+tepPLS(DATA1, DATA2, center1 = TRUE, scale1 = "SS1", center2 = TRUE, scale2 = "SS1", DESIGN = NULL, make_design_nominal = TRUE, graphs = TRUE, k = 0)
+
+DATA1 : Data matrix 1 (X) - here rs-FC
+
+DATA2 : Data matrix 2 (Y) - here RNI or RND
+
+center1 / center2 : a boolean, vector, or string to center the data. See expo.scale for details.
+
+scale1 / scale2 : a boolean, vector, or string to scale the data. See expo.scale for details.
+
+DESIGN : a design matrix to indicate if rows belong to groups.
+
+make_design_nominal : a boolean. If TRUE (default), DESIGN is a vector that indicates groups (and will be dummy-coded). If FALSE, DESIGN is a dummy-coded matrix.
+
+graphs : a boolean. If TRUE (default), graphs and plots are provided (via tepGraphs). Keep FALSE on the HPC.
+
+k : number of components to return.
+
+
+```{r plsc}
+data.design <- as.factor(covar_df$site_id_l)
+data.design.vec <- as.matrix(data.design)
+rownames(data.design.vec) <- subj_ids
+
+pls.res <- tepPLS(
+  data1,
+  data2,
+  center1 = TRUE, scale1 = "SS1",
+  center2 = TRUE, scale2 = "SS1",
+  DESIGN = data.design.vec,
+  make_design_nominal = TRUE,
+  graphs = FALSE
+)
+
+summary(pls.res)
+```
+
+### 3. Number of Dimensions
+
+The null hypothesis is that there is no correlation between the tables, so the permutation test gives a p-value for each eigenvalue.
+
+```{r perm}
+nL <- min(ncol(data1), ncol(data2))
+
+resPerm4PLSC <- perm4PLSC(data1,
+  data2,
+  permType = "byColumns",
+  nIter = n_iter_perm   # 10000 on the HPC, 100 locally (config.R)
+)
+print(resPerm4PLSC)
+```
+
+```{r scree}
+eigs <- pls.res$TExPosition.Data$eigs
+scree_df <- data.frame(
+  Dimension = paste0("Dim", seq_along(eigs)),
+  eigens = eigs,
+  pEigens = resPerm4PLSC$pEigenvalues[seq_along(eigs)]
+)
+write.csv(scree_df, file.path(out_dir, "scree_values.csv"), row.names = FALSE)
+cat("Omnibus p =", resPerm4PLSC$pOmnibus, "\n")
+
+png(file.path(fig_dir, "PLSC_Scree_Plot.png"), width = 1200, height = 800, res = 100)
+my.scree <- PlotScree(
+  ev = eigs,
+  p.ev = resPerm4PLSC$pEigenvalues,
+  title = paste0("PLSC Scree Plot: rs-FC x ", toupper(block)),
+  plotKaiser = TRUE,
+  col.ns = "black",
+  col.sig = "red"
+)
+invisible(dev.off())
+
+kable(head(scree_df, 20), digits = 4) %>% kable_styling()
+```
+
+
+### 4. Loadings and bootstrap ratios
+
+These are the loadings obtained after performing SVD on the cross-correlation matrix.
+
+```{r loadings}
+P.data1 <- pls.res$TExPosition.Data$pdq$p   # rs-FC loadings
+Q.data2 <- pls.res$TExPosition.Data$pdq$q   # RNI / RND loadings
+rsfc_loadings <- as.data.frame(P.data1)
+smri_loadings <- as.data.frame(Q.data2)
+```
+
+```{r boot}
+nf_boot <- min(nf2keep, length(eigs))
+resBoot4PLSC <- Boot4PLSC(data1,
+  data2,
+  nIter = n_iter_boot,
+  Fi = pls.res$TExPosition.Data$fi,
+  Fj = pls.res$TExPosition.Data$fj,
+  nf2keep = nf_boot,
+  critical.value = br_threshold,
+  alphaLevel = 0.05
+)
+
+BR.I <- resBoot4PLSC$bootRatios.i   # rs-FC
+BR.J <- resBoot4PLSC$bootRatios.j   # RNI / RND
+colnames(BR.I) <- paste0("BR_Dim", seq_len(ncol(BR.I)))
+colnames(BR.J) <- paste0("BR_Dim", seq_len(ncol(BR.J)))
+
+rsfc_res <- cbind.data.frame(rsfc_loadings, BR.I)
+smri_res <- cbind.data.frame(smri_loadings, BR.J)
+
+write.csv(rsfc_res, file.path(out_dir, "rsfc_P-components.csv"), row.names = TRUE)
+write.csv(smri_res, file.path(out_dir, sprintf("%s_Q-components.csv", block)), row.names = TRUE)
+
+# Latent variable scores, one row per participant (used by the LMEs)
+lx <- data.frame(participant_id = subj_ids, pls.res$TExPosition.Data$lx, check.names = FALSE)
+ly <- data.frame(participant_id = subj_ids, pls.res$TExPosition.Data$ly, check.names = FALSE)
+colnames(lx)[-1] <- paste0("lx_Dim", seq_len(ncol(lx) - 1))
+colnames(ly)[-1] <- paste0("ly_Dim", seq_len(ncol(ly) - 1))
+colnames(lx)[1] <- colnames(ly)[1] <- id_col
+write.csv(lx, file.path(out_dir, "rsfc_lx-scores.csv"), row.names = FALSE)
+write.csv(ly, file.path(out_dir, sprintf("%s_ly-scores.csv", block)), row.names = FALSE)
+
+# Keep the full R objects for later scripts / figures
+saveRDS(list(block = block, pls = pls.res, perm = resPerm4PLSC, boot = resBoot4PLSC,
+             ids = subj_ids, n_iter = n_iter_perm),
+        file.path(out_dir, "plsc_results.rds"))
+```
+
+```{r sig-dims}
+significant_dims <- which(resPerm4PLSC$pEigenvalues[seq_along(eigs)] < sig_alpha)
+if (resPerm4PLSC$pOmnibus >= sig_alpha || length(significant_dims) == 0) {
+  cat("Omnibus test not significant (p =", resPerm4PLSC$pOmnibus, ") - using dimension 1 by default\n")
+  significant_dims <- integer(0)
+} else {
+  cat("Omnibus test p-value:", resPerm4PLSC$pOmnibus, "\n")
+  cat("Significant dimensions (p <", sig_alpha, "):", significant_dims, "\n")
+}
+write.csv(data.frame(dimension = significant_dims,
+                     p = resPerm4PLSC$pEigenvalues[significant_dims]),
+          file.path(out_dir, "significant_dimensions.csv"), row.names = FALSE)
+```
+
+```{r br-plots}
+dimensions_to_plot <- seq_len(min(max_dims_to_plot, ncol(BR.I)))
+rsfc_colors <- rep("black", nrow(BR.I))
+smri_colors <- rep("black", nrow(BR.J))
+# Short labels for the bars (drop the long ABCD prefixes)
+lab_rsfc <- sub(rsfc_block$prefix, "", rownames(BR.I), fixed = TRUE)
+lab_smri <- sub(sb$prefix, "", rownames(BR.J), fixed = TRUE)
+
+for (dim in dimensions_to_plot) {
+  png(file.path(fig_dir, paste0("Bootstrap_Ratio_BRI_rsfc_Dim", dim, ".png")),
+      width = 2000, height = 1200, res = 200)
+  print(PrettyBarPlot2(setNames(BR.I[, dim], lab_rsfc),
+    threshold = br_threshold, font.size = 3,
+    color4bar = rsfc_colors, ylab = "Bootstrap ratios"
+  ) + ggtitle(paste0("Component ", dim), subtitle = "Function (rs-FC, Gordon networks)"))
+  invisible(dev.off())
+
+  png(file.path(fig_dir, paste0("Bootstrap_Ratio_BRJ_", block, "_Dim", dim, ".png")),
+      width = 2000, height = 1200, res = 200)
+  print(PrettyBarPlot2(setNames(BR.J[, dim], lab_smri),
+    threshold = br_threshold, font.size = 3,
+    color4bar = smri_colors, ylab = "Bootstrap ratios"
+  ) + ggtitle(paste0("Component ", dim), subtitle = paste0(sb$label, ", Desikan cortical GM")))
+  invisible(dev.off())
+}
+cat("Saved bootstrap ratio plots for dimensions:", paste(dimensions_to_plot, collapse = ", "), "\n")
+```
+
+### rs-FC bootstrap ratios as a network matrix
+
+Same layout as Bottenhorn et al.: networks ordered along the sensorimotor-association axis (sensorimotor, attention/memory, triple network), lower triangle, diagonal = within-network. Only |BR| > threshold is coloured. If the real ABCD column names don't follow the `<net>_<net>` pattern, this chunk prints a message and is skipped.
+
+```{r br-network-matrix, fig.width=6, fig.height=5}
+# ABCD Gordon abbreviations, ordered along the S-A axis
+sa_order <- c(vs = "Vis", smh = "SMH", smm = "SMM", ad = "Aud",
+              ca = "CPa", rspltp = "RsTp", dla = "DAttn", cgc = "COpp", vta = "VAttn",
+              sa = "SN", fo = "FPN", dt = "DMN")
+plot_net_matrix <- function(br, dim) {
+  pairs <- strsplit(lab_rsfc, "_", fixed = TRUE)
+  ok <- vapply(pairs, function(p) length(p) == 2 && all(p %in% names(sa_order)), logical(1))
+  if (!all(ok)) stop("could not parse network names: ", paste(head(lab_rsfc[!ok], 3), collapse = ", "))
+  a <- factor(sa_order[vapply(pairs, `[`, "", 1)], levels = sa_order)
+  b <- factor(sa_order[vapply(pairs, `[`, "", 2)], levels = sa_order)
+  # put every cell in the lower triangle
+  row <- ifelse(as.integer(a) >= as.integer(b), as.character(a), as.character(b))
+  col <- ifelse(as.integer(a) >= as.integer(b), as.character(b), as.character(a))
+  df <- data.frame(row = factor(row, levels = rev(sa_order)), col = factor(col, levels = sa_order),
+                   br = br[, dim])
+  df$br_thr <- ifelse(abs(df$br) > br_threshold, df$br, NA)
+  lim <- max(abs(df$br), na.rm = TRUE)
+  ggplot(df, aes(col, row, fill = br_thr)) +
+    geom_tile(colour = "grey85") +
+    scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B", limits = c(-lim, lim),
+                         na.value = "white", name = "BR") +
+    coord_equal() + theme_minimal(base_size = 9) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), panel.grid = element_blank()) +
+    labs(x = NULL, y = NULL, title = paste0(toupper(block), "-related rs-FC, Dim ", dim))
+}
+for (dim in dimensions_to_plot) {
+  p <- tryCatch(plot_net_matrix(BR.I, dim), error = function(e) { message("Network matrix skipped: ", conditionMessage(e)); NULL })
+  if (is.null(p)) break
+  ggsave(file.path(fig_dir, paste0("rsfc_network_matrix_", block, "_Dim", dim, ".png")), p, width = 6, height = 5, dpi = 200)
+  print(p)
+}
+```
+
+### Percent Variance
+```{r pct-var}
+pctVar_explained <- (eigs / sum(eigs)) * 100
+variance_table <- data.frame(
+  Component = paste0("Dim", seq_along(eigs)),
+  Eigenvalue = round(eigs, 4),
+  Percent_Variance = round(pctVar_explained, 2),
+  Cumulative_Variance = round(cumsum(pctVar_explained), 2),
+  p_perm = resPerm4PLSC$pEigenvalues[seq_along(eigs)]
+)
+write.csv(variance_table, file.path(out_dir, "percent_variance_explained.csv"), row.names = FALSE)
+kable(head(variance_table, 10)) %>% kable_styling()
+```
+
+```{r session}
+sessionInfo()
+```

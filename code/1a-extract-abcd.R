@@ -17,7 +17,16 @@
 #
 # Run:  Rscript 1a-extract-abcd.R   (from code/; HPC: hpc/1a-extract.sbatch)
 # =============================================================================
-source(file.path(Sys.getenv("PLSC_CODE_DIR", "."), "config.R"))
+code_dir <- Sys.getenv("PLSC_CODE_DIR", unset = "")
+if (!nzchar(code_dir)) {
+  script_path <- tryCatch(sys.frame(1)$ofile, error = function(e) NULL)
+  if (is.null(script_path)) {
+    script_arg <- grep("^--file=", commandArgs(), value = TRUE)
+    if (length(script_arg)) script_path <- sub("^--file=", "", script_arg[[1]])
+  }
+  code_dir <- if (is.null(script_path)) "." else dirname(normalizePath(script_path))
+}
+source(file.path(code_dir, "config.R"))
 suppressPackageStartupMessages(library(dplyr))
 
 log_n <- data.frame(step = character(), n = integer())

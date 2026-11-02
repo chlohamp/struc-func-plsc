@@ -94,6 +94,44 @@ Packages: `tidyverse`, `ExPosition`, `TExPosition`, `PTCA4CATA`, `data4PCCAR`,
 `corrplot`, `kableExtra`, `rmarkdown`, `lmerTest`, and for step 3 `ranger`,
 `glmnet`, `glmertree` (+ `partykit`). `arrow` is optional. Without it, the scripts read the .tsv files.
 
+### Python environment (for `plot-gord-desik.ipynb`)
+
+The atlas plotting notebook uses a Python 3.9 virtual environment in `.venv/` at the
+project root. The folder is git-ignored, so each computer has to build its own. Run this once in the terminal:
+
+```bash
+cd ~/Desktop/struc-func-plsc
+
+# 1. check that Python 3.9 is installed (it should print Python 3.9.x)
+python3.9 --version
+
+# 2. create the environment
+python3.9 -m venv .venv
+
+# 3. activate it (your prompt will start with "(.venv)")
+source .venv/bin/activate
+
+# 4. install the packages (gradec installs from GitHub, so git must be installed)
+python -m pip install --upgrade pip
+python -m pip install -r code/requirements.txt
+
+# 5. register it as a Jupyter kernel
+python -m ipykernel install --user --name struc-func-plsc --display-name "Python (struc-func-plsc)"
+```
+
+To use the environment later, run `cd ~/Desktop/struc-func-plsc && source .venv/bin/activate`,
+and run `deactivate` when you're done. In VS Code, open `code/plot-gord-desik.ipynb`, click **Select Kernel** (top right),
+and pick `.venv` or **Python (struc-func-plsc)**.
+
+Notes:
+- If `python3.9` isn't found, install Python 3.9 (for example `brew install python@3.9`
+  or the installer from python.org) and try again. The pinned versions in
+  `requirements.txt` (for example `numpy==2.0.2`) need Python 3.9.
+- To start over, delete the environment with `rm -rf .venv` and repeat steps 2 to 5.
+- On first run the notebook downloads the fs_LR surfaces (`neuromaps`) and the DK atlas
+  (`netneurotools`, to `~/nnt-data`), so it needs internet access.
+- PNGs are saved to `derivatives/figures/`.
+
 ## 2. Run on the HPC
 
 ```bash

@@ -1,6 +1,7 @@
 /dset/
 /papers/
-/code/hpc/
 /code/_previous-versions/
 /derivatives/
 .DS_Store
+/.venv/
+/gordon_networks_222.nii

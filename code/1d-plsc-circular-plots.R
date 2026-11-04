@@ -39,8 +39,7 @@ suppressPackageStartupMessages({ library(circlize); library(ggplot2) })
 # same order as the network-matrix figure in 1b. Colours match 1c-plsc-figures.
 gordon <- data.frame(
   abbr  = c("vs", "smh", "smm", "ad", "ca", "rspltp", "dla", "cgc", "vta", "sa", "fo", "dt"),
-  label = c("Visual", "SM hand", "SM mouth", "Auditory", "Cing-parietal", "Retrosplen-temp",
-            "Dorsal attn", "Cing-opercular", "Ventral attn", "Salience", "Fronto-parietal", "Default"),
+  label = c("VN", "SHN", "SMN", "AN", "CPN", "RTN", "DAN", "CON", "VAN", "SN", "FPN", "DN"),
   col   = c("#44256B", "#1BBFE0", "#0050BF", "#5B040D", "#CE4E05", "#004502",
             "#DCAA32", "#8D0102", "#8A388F", "#010F89", "#018900", "#F89400"),
   group = c(rep("Sensorimotor", 4), rep("Attention / memory", 5), rep("Triple network", 3)),

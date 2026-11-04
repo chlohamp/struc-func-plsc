@@ -315,10 +315,10 @@ cat("Saved bootstrap ratio plots for dimensions:", paste(dimensions_to_plot, col
 Same layout as Bottenhorn et al.: networks ordered along the sensorimotor-association axis (sensorimotor, attention/memory, triple network), lower triangle, diagonal = within-network. Only |BR| > threshold is coloured. If the real ABCD column names don't follow the `<net>_<net>` pattern, this chunk prints a message and is skipped.
 
 ```{r br-network-matrix, fig.width=6, fig.height=5}
-# ABCD Gordon abbreviations, ordered along the S-A axis
-sa_order <- c(vs = "Vis", smh = "SMH", smm = "SMM", ad = "Aud",
-              ca = "CPa", rspltp = "RsTp", dla = "DAttn", cgc = "COpp", vta = "VAttn",
-              sa = "SN", fo = "FPN", dt = "DMN")
+# ABCD Gordon codes -> network abbreviations, ordered along the S-A axis
+sa_order <- c(vs = "VN", smh = "SHN", smm = "SMN", ad = "AN",
+              ca = "CPN", rspltp = "RTN", dla = "DAN", cgc = "CON", vta = "VAN",
+              sa = "SN", fo = "FPN", dt = "DN")
 plot_net_matrix <- function(br, dim) {
   pairs <- strsplit(lab_rsfc, "_", fixed = TRUE)
   ok <- vapply(pairs, function(p) length(p) == 2 && all(p %in% names(sa_order)), logical(1))

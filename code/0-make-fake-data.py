@@ -18,7 +18,7 @@ Sessions:  ses-00A (baseline), ses-02A (Year 2), ses-04A (Year 4)
 Built-in structure (loosely after Bottenhorn et al. preprint) so the PLSCs and
 LMEs have something to find:
   z_glob : global RNI  <-> sensorimotor rs-FC gradient
-  z_attn : widespread RND  <-> attention profile (DAttn/FPN up, VAttn/COpp down);
+  z_attn : widespread RND  <-> attention profile (DAN/FPN up, VAN/CON down);
            also better flanker, lower UPPS urgency, lower DERS
   z_rc   : rostro-caudal RNI/RND gradient <-> weaker sensorimotor gradient
   z_trip : triple-network rs-FC  <-> ERQ reappraisal
@@ -181,7 +181,7 @@ def rsfc_loadings(a, b):
     s = {a, b}
     # sensorimotor gradient: within-SM up, SM x triple down
     sm = 0.04 if s <= sensorimotor else (-0.03 if (s & sensorimotor and s & triple) else 0.0)
-    # attention profile: DAttn / FPN up, VAttn / COpp down, within-network down
+    # attention profile: DAN / FPN up, VAN / CON down, within-network down
     at = 0.03 * bool(s & {"dla", "fo"}) - 0.03 * bool(s & {"vta", "cgc"}) - (0.015 if a == b else 0)
     tr = 0.03 if (s <= triple) else 0.0
     return sm, at, tr

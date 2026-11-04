@@ -5,3 +5,4 @@
 .DS_Store
 /.venv/
 /gordon_networks_222.nii
+/code/plsc_schematic.py

@@ -39,7 +39,13 @@ release_dir <- if (PLSC_ENV == "hpc") HPC_RELEASE_DIR else file.path(project_dir
 
 # All outputs. Shared extraction files go here directly; each PLSC gets its own
 # sub-folder, derivatives/plsc-rni/ and derivatives/plsc-rnd/ (see plsc_dirs()).
+# Optional analysis variant (PLSC_VARIANT). Each variant writes to its own
+# sub-folder of derivatives/ so it never overwrites the main results.
+#   ""                   -> main analysis, derivatives/
+#   "katie-baseline-vars"-> Bottenhorn et al. (bioRxiv 2026) covariates, derivatives/katie-baseline-vars/
+PLSC_VARIANT <- Sys.getenv("PLSC_VARIANT", unset = "")
 deriv_dir <- file.path(project_dir, "derivatives")
+if (nzchar(PLSC_VARIANT)) deriv_dir <- file.path(deriv_dir, PLSC_VARIANT)
 dir.create(deriv_dir, showWarnings = FALSE, recursive = TRUE)
 
 # Headless HPC nodes have no X11 display; cairo lets png() work without one.
@@ -153,6 +159,30 @@ motion_max_dmri   <- 2.0   # dMRI mean framewise displacement, mm (dMRI FD runs 
 resid_covars_rsfc   <- c(numerical_covars, categorical_covars, "site_id_l")
 resid_covars_struct <- c(numerical_covars, categorical_covars, "site_id_l")
 
+# ---- 6b. Variant: Bottenhorn et al. covariates ------------------------------------
+# Same covariates as Bottenhorn et al. (bioRxiv 2026): age, sex, handedness,
+# site, scanner manufacturer. Head motion stays an exclusion criterion only
+# (cutoffs above), so it is kept in covariate_map for the exclusion step but
+# not regressed out. Parent age/education, partner education, income and birth
+# country are dropped, so they no longer restrict the sample either.
+if (PLSC_VARIANT == "katie-baseline-vars") {
+  covariate_map <- list(
+    interview_age         = covariate_map$interview_age,
+    demo_sex_v2           = covariate_map$demo_sex_v2,
+    handedness            = list("nc_y_ehis", "nc_y_ehis_score", ses_latest),  # Edinburgh: 1 right, 2 left, 3 mixed; Y4, else baseline
+    mri_info_manufacturer = covariate_map$mri_info_manufacturer,
+    rsfmri_meanmotion     = covariate_map$rsfmri_meanmotion,     # exclusion only
+    dmri_meanmotion       = covariate_map$dmri_meanmotion,       # exclusion only
+    site_id_l             = covariate_map$site_id_l,
+    rel_family_id         = covariate_map$rel_family_id
+  )
+  covariate_recode    <- list()
+  categorical_covars  <- c("demo_sex_v2", "handedness", "mri_info_manufacturer")
+  numerical_covars    <- c("interview_age")
+  resid_covars_rsfc   <- c(numerical_covars, categorical_covars, "site_id_l")
+  resid_covars_struct <- c(numerical_covars, categorical_covars, "site_id_l")
+}
+
 # Fixed-effect covariates in the LMEs (site/family are the random effects).
 lme_numerical_covars   <- c(numerical_covars, "rsfmri_meanmotion", "dmri_meanmotion")
 lme_categorical_covars <- categorical_covars
@@ -163,8 +193,8 @@ lme_categorical_covars <- categorical_covars
 # given at every wave - check with 0-inspect-release.R).
 lme_predictor_map <- list(
   # REWARD - BIS/BAS
-  bis_sum            = list("mh_y_bisbas", "mh_y_bisbas__bis_sum",          "reward", "continuous"),             # checked vs 7.0 (a __v01 version also exists)
-  bas_reward_resp    = list("mh_y_bisbas", "mh_y_bisbas__bas__rr_sum",      "reward", "continuous"),             # checked vs 7.0 (a __v01 version also exists)
+  bis_sum            = list("mh_y_bisbas", "mh_y_bisbas__bis_sum__v01",     "reward", "continuous"),             # checked vs 7.0
+  bas_reward_resp    = list("mh_y_bisbas", "mh_y_bisbas__bas__rr_sum__v01", "reward", "continuous"),             # checked vs 7.0
   bas_drive          = list("mh_y_bisbas", "mh_y_bisbas__bas__dr_sum",      "reward", "continuous"),             # checked vs 7.0
   bas_fun_seeking    = list("mh_y_bisbas", "mh_y_bisbas__bas__fs_sum",      "reward", "continuous"),             # checked vs 7.0
   # REWARD - UPPS-P
@@ -182,11 +212,11 @@ lme_predictor_map <- list(
   ders_catastrophize = list("mh_p_ders",   "mh_p_ders__catast_mean",        "emotion_regulation", "continuous"), # checked vs 7.0
   ders_distracted    = list("mh_p_ders",   "mh_p_ders__distract_mean",      "emotion_regulation", "continuous"), # checked vs 7.0
   ders_neg_secondary = list("mh_p_ders",   "mh_p_ders__negscnd_mean",       "emotion_regulation", "continuous"), # checked vs 7.0
-  # EXECUTIVE FUNCTION - NIH Toolbox (age-corrected standard scores)
-  nihtb_flanker      = list("nc_y_nihtb",  "nc_y_nihtb__flnkr__agecor_score", "executive_function", "continuous"), # checked vs 7.0
-  nihtb_cardsort     = list("nc_y_nihtb",  "nc_y_nihtb__crdst__agecorr_score", "executive_function", "continuous"), # checked vs 7.0; only ~19 at Y4, so skipped by min_n_lme
-  nihtb_listsort     = list("nc_y_nihtb",  "nc_y_nihtb__lswmt__agecor_score", "executive_function", "continuous"), # checked vs 7.0
-  nihtb_pattern      = list("nc_y_nihtb",  "nc_y_nihtb__pttcp__agecor_score", "executive_function", "continuous")  # checked vs 7.0
+  # EXECUTIVE FUNCTION - NIH Toolbox (fully corrected T-scores) + flanker task accuracy
+  nihtb_flanker      = list("nc_y_nihtb",  "nc_y_nihtb__flnkr__fullcor_tscore",  "executive_function", "continuous"), # checked vs 7.0 (fully corrected T)
+  flanker_incongr_acc = list("nc_y_flnkr", "nc_y_flnkr__incongr_acc",           "executive_function", "continuous"), # checked vs 7.0; ~1,456 at Y4
+  nihtb_cardsort     = list("nc_y_nihtb",  "nc_y_nihtb__crdst__fullcorr_tscore", "executive_function", "continuous"), # checked vs 7.0 (fully corrected T); only ~19 at Y4, so skipped by min_n_lme
+  nihtb_pattern      = list("nc_y_nihtb",  "nc_y_nihtb__pttcp__fullcor_tscore",  "executive_function", "continuous")  # checked vs 7.0 (fully corrected T)
 )
 lme_predictor_map <- lapply(lme_predictor_map, function(x)
   list(table = x[[1]], col = x[[2]], domain = x[[3]], type = x[[4]]))
@@ -293,5 +323,5 @@ read_abcd_table <- function(table, cols = NULL, dir = release_dir, format = data
   df
 }
 
-message(sprintf("[config] env=%s | release=%s | out=%s | brain=%s | nIter=%d",
-                PLSC_ENV, release_dir, deriv_dir, session_brain, n_iter_perm))
+message(sprintf("[config] env=%s | variant=%s | release=%s | out=%s | brain=%s | nIter=%d",
+                PLSC_ENV, if (nzchar(PLSC_VARIANT)) PLSC_VARIANT else "main", release_dir, deriv_dir, session_brain, n_iter_perm))

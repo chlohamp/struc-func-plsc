@@ -47,6 +47,7 @@ papers/
 | Step | Script | What it does | Outputs |
 |---|---|---|---|
 | 0 | `0-inspect-release.R` | Lists every table/column in the release. Checks each name in `config.R`, counts non-missing N at the wave used, and checks the 78/68/68 feature counts | `release_column_index.csv` |
+| 0 | `0-pull-hpc-data.sh` | Copies the real ABCD 7.0 tables this project uses from the HPC to `dset/` on a laptop (`bash code/0-pull-hpc-data.sh USER@HPC_HOST`) | `dset/` |
 | 0 | `0-make-fake-data.py` | Builds the fake release used for local testing | `dset/` |
 | 1a | `1a-extract-abcd.R` | Extracts data: QC, missing codes, covariates by wave, complete cases | `clean-rsfc/rni/rnd.csv`, `covariate.csv`, `covariate-sessions.csv`, `lme-measures.csv`, `extraction-log.csv` |
 | 1b | `1b-plsc-clean.Rmd` | Runs one PLSC per run (`block = rni` or `rnd`): residualizes, runs the PLSC, permutation test + bootstrap, makes figures (including the network matrix) | `plsc-<block>/`: HTML report, loadings + BRs, latent scores, `significant_dimensions.csv`, `figures/` |

@@ -77,7 +77,7 @@ cat(sprintf("Environment: %s | N = %d | rs-FC features = %d | %s features = %d |
 
 ## Performing residualization
 
-Each block is regressed on the covariates in `config.R` (`resid_covars_rsfc` with rs-fMRI motion, `resid_covars_struct` with dMRI motion); the residuals go into the PLSC.
+Each block is regressed on the covariates in `config.R` (`resid_covars_rsfc`, `resid_covars_struct`); the residuals go into the PLSC. Head motion is not a covariate: participants above the mean-FD cutoffs in `config.R` were excluded in `1a`.
 
 ```{r resid-fn}
 resid_block <- function(block_df, covs) {
@@ -177,6 +177,17 @@ pls.res <- tepPLS(
 )
 
 summary(pls.res)
+
+# Inputs for 1b-plsc-chunks.R (chunked permutations / bootstraps)
+saveRDS(list(data1 = data1, data2 = data2,
+             Fi = pls.res$TExPosition.Data$fi, Fj = pls.res$TExPosition.Data$fj,
+             nf_boot = min(nf2keep, length(pls.res$TExPosition.Data$eigs))),
+        file.path(out_dir, "plsc_input.rds"))
+chunk_dir   <- file.path(out_dir, "chunks")
+read_chunks <- function(type) {
+  f <- list.files(chunk_dir, paste0("^", type, "_.*\\.rds$"), full.names = TRUE)
+  lapply(f, readRDS)
+}
 ```
 
 ### 3. Number of Dimensions
@@ -186,11 +197,28 @@ The null hypothesis is that there is no correlation between the tables, so the p
 ```{r perm}
 nL <- min(ncol(data1), ncol(data2))
 
+perm_chunks <- read_chunks("perm")
+if (length(perm_chunks)) {
+  # Combine chunks from 1b-plsc-chunks.R: same formulas as perm4PLSC()
+  fixedEig <- perm_chunks[[1]]$fixedEigenvalues
+  stopifnot(all(vapply(perm_chunks, function(k) isTRUE(all.equal(k$fixedEigenvalues, fixedEig)), logical(1))))
+  pe    <- do.call(rbind, lapply(perm_chunks, `[[`, "permEigenvalues"))
+  nPerm <- nrow(pe)
+  pOmni <- sum(rowSums(pe) > sum(fixedEig)) / nPerm; if (pOmni == 0) pOmni <- 1 / nPerm
+  pEig  <- rowSums(t(pe) > fixedEig) / nPerm;        pEig[pEig == 0] <- 1 / nPerm
+  resPerm4PLSC <- structure(list(fixedInertia = sum(fixedEig), fixedEigenvalues = fixedEig,
+                                 pOmnibus = pOmni, pEigenvalues = pEig,
+                                 permInertia = rowSums(pe), permEigenvalues = pe), class = "perm4PLSC")
+  cat(sprintf("Permutation test: %d permutations combined from %d chunks (seeds %s)\n", nPerm,
+              length(perm_chunks), paste(vapply(perm_chunks, `[[`, 1L, "seed"), collapse = ", ")))
+  if (nPerm != n_iter_perm) warning("chunks hold ", nPerm, " permutations but PLSC_NITER = ", n_iter_perm)
+} else {
 resPerm4PLSC <- perm4PLSC(data1,
   data2,
   permType = "byColumns",
   nIter = n_iter_perm   # 10000 on the HPC, 100 locally (config.R)
 )
+}
 print(resPerm4PLSC)
 ```
 
@@ -232,6 +260,22 @@ smri_loadings <- as.data.frame(Q.data2)
 
 ```{r boot}
 nf_boot <- min(nf2keep, length(eigs))
+boot_chunks <- read_chunks("boot")
+if (length(boot_chunks)) {
+  # Combine chunks from 1b-plsc-chunks.R: same bootstrap-ratio formula as Boot4PLSC()
+  # (mean over iterations / population SD over iterations)
+  bind3 <- function(l) { a <- array(unlist(l), dim = c(dim(l[[1]])[1:2], sum(vapply(l, function(x) dim(x)[3], 1))))
+                         dimnames(a)[1:2] <- dimnames(l[[1]])[1:2]; a }
+  br_of <- function(cube) { m <- apply(cube, c(1, 2), mean)
+                            s <- sqrt(apply((cube - array(m, dim(cube)))^2, c(1, 2), mean)); m / s }
+  bi <- bind3(lapply(boot_chunks, `[[`, "brick.i")); bj <- bind3(lapply(boot_chunks, `[[`, "brick.j"))
+  resBoot4PLSC <- list(bootstrapBrick.i = bi, bootRatios.i = br_of(bi),
+                       bootstrapBrick.j = bj, bootRatios.j = br_of(bj))
+  resBoot4PLSC$bootRatiosSignificant.i <- abs(resBoot4PLSC$bootRatios.i) > br_threshold
+  resBoot4PLSC$bootRatiosSignificant.j <- abs(resBoot4PLSC$bootRatios.j) > br_threshold
+  cat(sprintf("Bootstrap: %d resamples combined from %d chunks\n", dim(bi)[3], length(boot_chunks)))
+  if (dim(bi)[3] != n_iter_boot) warning("chunks hold ", dim(bi)[3], " bootstraps but PLSC_NITER = ", n_iter_boot)
+} else
 resBoot4PLSC <- Boot4PLSC(data1,
   data2,
   nIter = n_iter_boot,
@@ -316,11 +360,11 @@ Same layout as Bottenhorn et al.: networks ordered along the sensorimotor-associ
 
 ```{r br-network-matrix, fig.width=6, fig.height=5}
 # ABCD Gordon abbreviations, ordered along the S-A axis
-sa_order <- c(vs = "Vis", smh = "SMH", smm = "SMM", ad = "Aud",
-              ca = "CPa", rspltp = "RsTp", dla = "DAttn", cgc = "COpp", vta = "VAttn",
-              sa = "SN", fo = "FPN", dt = "DMN")
+sa_order <- c(vis = "VN", smh = "SHN", smm = "SMN", aud = "AN",
+              cip = "CPN", ret = "RTN", doa = "DAN", cio = "CON", vea = "VAN",
+              sal = "SN", frp = "FPN", def = "DN")   # ABCD 7.0 codes
 plot_net_matrix <- function(br, dim) {
-  pairs <- strsplit(lab_rsfc, "_", fixed = TRUE)
+  pairs <- strsplit(sub("_mean$", "", lab_rsfc), "__", fixed = TRUE)   # 7.0: <a>__<b>_mean
   ok <- vapply(pairs, function(p) length(p) == 2 && all(p %in% names(sa_order)), logical(1))
   if (!all(ok)) stop("could not parse network names: ", paste(head(lab_rsfc[!ok], 3), collapse = ", "))
   a <- factor(sa_order[vapply(pairs, `[`, "", 1)], levels = sa_order)

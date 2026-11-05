@@ -36,6 +36,7 @@ note  <- function(step, n) {
 }
 recode_missing <- function(x) { if (is.numeric(x)) x[x %in% missing_codes] <- NA; x }
 at_session <- function(df, ses) {
+  df[[session_col]] <- as.character(df[[session_col]])
   df <- df[df[[session_col]] == ses, setdiff(colnames(df), session_col), drop = FALSE]
   df[!duplicated(df[[id_col]]), , drop = FALSE]
 }
@@ -46,6 +47,12 @@ pick_features <- function(b) {
   df   <- at_session(read_abcd_table(b$table), session_brain)
   feat <- grep(paste0("^", b$prefix), colnames(df), value = TRUE)
   if (!is.null(b$exclude) && nzchar(b$exclude)) feat <- feat[!grepl(b$exclude, feat)]
+  if (isTRUE(b$upper_triangle)) {                      # <prefix><a>__<b>_mean: keep a <= b only
+    ab   <- regmatches(sub(b$prefix, "", feat, fixed = TRUE),
+                       regexec("^([a-z]+)__([a-z]+)_mean$", sub(b$prefix, "", feat, fixed = TRUE)))
+    keep <- vapply(ab, function(m) length(m) == 3 && m[2] <= m[3], logical(1))
+    feat <- feat[keep]
+  }
   if (length(feat) == 0) stop("No columns in ", b$table, " start with ", b$prefix, " - check config.R")
   msg <- sprintf("    %s: %d features kept from %s", b$label, length(feat), b$table)
   if (!is.null(b$n_expected) && length(feat) != b$n_expected) {
@@ -65,6 +72,10 @@ get_var <- function(spec) {
   tb <- spec[[1]]; col <- spec[[2]]; sessions <- spec[[3]]
   df <- read_abcd_table(tb, cols = c(id_col, session_col, col))
   if (!col %in% colnames(df)) stop("Column ", col, " not found in ", tb)
+  # ABCD 7.0 parquet stores coded answers as text ("1", "777"): make them numeric
+  if (is.factor(df[[col]])) df[[col]] <- as.character(df[[col]])
+  if (is.character(df[[col]]) && all(grepl("^-?[0-9.]+$", na.omit(df[[col]]))))
+    df[[col]] <- as.numeric(df[[col]])
   df[[col]] <- recode_missing(df[[col]])
   if (is.null(sessions) || !session_col %in% colnames(df)) {              # static
     df <- df[!duplicated(df[[id_col]]), ]
@@ -85,6 +96,9 @@ for (v in names(cov_list)) {
   covar[[v]]   <- cov_list[[v]]$value[m]
   cov_ses[[v]] <- cov_list[[v]]$ses[m]
 }
+
+if (exists("covariate_recode")) for (v in intersect(names(covariate_recode), colnames(covar)))
+  covar[[v]] <- covariate_recode[[v]](covar[[v]])
 
 # ---- LME predictors (session_lme) --------------------------------------------------
 message("Reading LME measures (", session_lme, ") ...")
@@ -144,6 +158,12 @@ if (length(qc_flags)) {
   ids  <- intersect(ids, pass)
   note("pass QC inclusion flags", length(ids))
 }
+
+# Head-motion exclusion (cutoffs in config.R). Missing motion = excluded.
+mot_ok <- covar[[id_col]][!is.na(covar$rsfmri_meanmotion) & covar$rsfmri_meanmotion <= motion_max_rsfmri &
+                          !is.na(covar$dmri_meanmotion)   & covar$dmri_meanmotion   <= motion_max_dmri]
+ids <- intersect(ids, mot_ok)
+note(sprintf("rs-fMRI mean FD <= %.2f mm and dMRI mean FD <= %.2f mm", motion_max_rsfmri, motion_max_dmri), length(ids))
 
 for (k in names(brain)) {
   b <- brain[[k]]

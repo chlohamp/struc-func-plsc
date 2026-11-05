@@ -38,9 +38,9 @@ suppressPackageStartupMessages({ library(circlize); library(ggplot2) })
 # Gordon networks (ABCD abbreviations) along the sensorimotor-association axis,
 # same order as the network-matrix figure in 1b. Colours match 1c-plsc-figures.
 gordon <- data.frame(
-  abbr  = c("vs", "smh", "smm", "ad", "ca", "rspltp", "dla", "cgc", "vta", "sa", "fo", "dt"),
-  label = c("Visual", "SM hand", "SM mouth", "Auditory", "Cing-parietal", "Retrosplen-temp",
-            "Dorsal attn", "Cing-opercular", "Ventral attn", "Salience", "Fronto-parietal", "Default"),
+  abbr  = c("vis", "smh", "smm", "aud", "cip", "ret", "doa", "cio", "vea", "sal", "frp", "def"),  # ABCD 7.0 codes
+  label = c("VN", "SHN", "SMN", "AN", "CPN", "RTN",
+            "DAN", "CON", "VAN", "SN", "FPN", "DN"),
   col   = c("#44256B", "#1BBFE0", "#0050BF", "#5B040D", "#CE4E05", "#004502",
             "#DCAA32", "#8D0102", "#8A388F", "#010F89", "#018900", "#F89400"),
   group = c(rep("Sensorimotor", 4), rep("Attention / memory", 5), rep("Triple network", 3)),
@@ -86,8 +86,8 @@ br_cols <- function(br, lim) ifelse(abs(br) > br_threshold, br_col_fun(lim)(br),
 # ---- Parsers -----------------------------------------------------------------
 # rs-FC row names: <prefix><net>_<net>   e.g. mr_y_rsfmri__corr__gpnet__dla_vta
 parse_rsfc <- function(rn) {
-  lab <- sub(rsfc_block$prefix, "", rn, fixed = TRUE)
-  pr  <- strsplit(lab, "_", fixed = TRUE)
+  lab <- sub("_mean$", "", sub(rsfc_block$prefix, "", rn, fixed = TRUE))
+  pr  <- strsplit(lab, "__", fixed = TRUE)                       # 7.0: <a>__<b>_mean
   ok  <- vapply(pr, function(p) length(p) == 2 && all(p %in% gordon$abbr), logical(1))
   if (!all(ok)) stop("Could not parse Gordon network pairs from rs-FC names, e.g.: ",
                      paste(head(lab[!ok], 3), collapse = ", "),
@@ -96,11 +96,22 @@ parse_rsfc <- function(rn) {
 }
 # RSI row names: <prefix><region>__<hemi>  e.g. mr_y_rsi__rni__dsk__precuneus__lh
 # (hemisphere found anywhere in the name, so other orders also work)
+# ABCD 7.0 Desikan abbreviations -> FreeSurfer names (from the release .json dictionary)
+dk_abbr <- c(bstmps = "bankssts", cac = "caudalanteriorcingulate", cmfrt = "caudalmiddlefrontal",
+  cn = "cuneus", er = "entorhinal", ff = "fusiform", ic = "isthmuscingulate", ins = "insula",
+  iprt = "inferiorparietal", itmp = "inferiortemporal", lg = "lingual", lobfrt = "lateralorbitofrontal",
+  locc = "lateraloccipital", mobfrt = "medialorbitofrontal", mtmp = "middletemporal", pactr = "paracentral",
+  pcc = "pericalcarine", pcg = "posteriorcingulate", pfrt = "frontalpole", ph = "parahippocampal",
+  pob = "parsorbitalis", poctr = "postcentral", pop = "parsopercularis", prcn = "precuneus",
+  prctr = "precentral", ptg = "parstriangularis", ptmp = "temporalpole", rac = "rostralanteriorcingulate",
+  rmfrt = "rostralmiddlefrontal", sfrt = "superiorfrontal", sm = "supramarginal", sprt = "superiorparietal",
+  stmp = "superiortemporal", ttmp = "transversetemporal")
 parse_dk <- function(rn, prefix) {
-  lab  <- tolower(sub(prefix, "", rn, fixed = TRUE))
+  lab  <- tolower(sub("_mean$", "", sub(prefix, "", rn, fixed = TRUE)))
   hemi <- ifelse(grepl("(^|[_.])lh([_.]|$)", lab), "lh", ifelse(grepl("(^|[_.])rh([_.]|$)", lab), "rh", NA))
   reg  <- gsub("(^|[_.])(lh|rh)([_.]|$)", "", lab)
   reg  <- gsub("[_.]", "", reg)
+  reg  <- ifelse(reg %in% names(dk_abbr), dk_abbr[reg], reg)
   ok   <- !is.na(hemi) & reg %in% unlist(dk_lobes)
   if (!all(ok)) stop("Could not parse Desikan region/hemisphere from names, e.g.: ",
                      paste(head(lab[!ok], 3), collapse = ", "),

@@ -60,10 +60,10 @@ data_format <- Sys.getenv("PLSC_DATA_FORMAT", unset = "parquet")   # "parquet" o
 id_col      <- "participant_id"
 session_col <- "session_id"
 
-ses_y4       <- "ses-04A"                                                   # VERIFY
-ses_baseline <- "ses-00A"                                                   # VERIFY
+ses_y4       <- "ses-04A"                                                   # checked vs 7.0
+ses_baseline <- "ses-00A"                                                   # checked vs 7.0
 # "Most recent available, up to Year 4": tried in this order, first non-missing wins
-ses_latest   <- c("ses-04A", "ses-03A", "ses-02A", "ses-01A", "ses-00A")   # VERIFY
+ses_latest   <- c("ses-04A", "ses-03A", "ses-02A", "ses-01A", "ses-00A")   # checked vs 7.0
 
 session_brain <- ses_y4     # imaging (rs-FC, RNI, RND, motion, QC, scanner)
 session_lme   <- ses_y4     # reward / ER / EF measures
@@ -76,9 +76,10 @@ missing_codes <- c(777, 999, 555, 888, -777, -999)
 # Function block (shared by both PLSCs): Gordon network-network correlations.
 # 12 networks (none excluded) -> 66 between + 12 within = 78 variables.
 rsfc_block <- list(
-  table   = "mr_y_rsfmri__corr__gpnet",            # VERIFY
-  prefix  = "mr_y_rsfmri__corr__gpnet__",          # VERIFY
-  exclude = "(__n_|_n$|__mean$|__count)",          # drop the "none" network + summaries
+  table   = "mr_y_rsfmri__corr__gpnet",            # checked vs 7.0
+  prefix  = "mr_y_rsfmri__corr__gpnet__",          # checked vs 7.0
+  exclude = "(__non__|__non_mean$)",               # drop the "none" network
+  upper_triangle = TRUE,                           # ABCD 7.0 ships the full symmetric 13x13 matrix (a__b == b__a): keep each pair once
   n_expected = 78,
   label   = "rs-FC (Gordon networks)"
 )
@@ -86,16 +87,16 @@ rsfc_block <- list(
 # Structure blocks: one PLSC each. 34 lh + 34 rh Desikan cortical GM ROIs = 68.
 struct_blocks <- list(
   rni = list(
-    table   = "mr_y_rsi__rni__dsk",                # VERIFY (restricted normalized isotropic, GM)
-    prefix  = "mr_y_rsi__rni__dsk__",              # VERIFY
-    exclude = "(__mean$|__total$|__count)",
+    table   = "mr_y_rsi__rni__gm__dsk",            # checked against 7.0 release (restricted normalized isotropic, GM)
+    prefix  = "mr_y_rsi__rni__gm__dsk__",
+    exclude = "dsk__(lh|rh)_mean$",                # drop hemisphere averages
     n_expected = 68,
     label   = "Cellular density (RNI)"
   ),
   rnd = list(
-    table   = "mr_y_rsi__rnd__dsk",                # VERIFY (restricted normalized directional, GM)
-    prefix  = "mr_y_rsi__rnd__dsk__",              # VERIFY
-    exclude = "(__mean$|__total$|__count)",
+    table   = "mr_y_rsi__rnd__gm__dsk",            # checked against 7.0 release (restricted normalized directional, GM)
+    prefix  = "mr_y_rsi__rnd__gm__dsk__",
+    exclude = "dsk__(lh|rh)_mean$",                # drop hemisphere averages
     n_expected = 68,
     label   = "Neurite density (RND)"
   )
@@ -103,10 +104,10 @@ struct_blocks <- list(
 plsc_blocks <- names(struct_blocks)
 
 # QC inclusion flags at session_brain (1 = include). NULL to skip.
-qc_table <- "mr_y_qc__incl"                                    # VERIFY
+qc_table <- "mr_y_qc__incl"                                    # checked vs 7.0
 qc_flags <- c(
-  "mr_y_qc__incl__rsfmri_indicator",                           # VERIFY
-  "mr_y_qc__incl__dmri_indicator"                              # VERIFY
+  "mr_y_qc__incl__rsfmri_indicator",                           # checked vs 7.0
+  "mr_y_qc__incl__dmri_indicator"                              # checked vs 7.0
 )
 
 # ---- 6. Covariates -----------------------------------------------------------
@@ -116,29 +117,41 @@ qc_flags <- c(
 #   sessions = ses_latest-> most recent non-missing value up to Year 4
 # The session each value came from is saved in covariate-sessions.csv.
 covariate_map <- list(
-  interview_age          = list("ab_g_dyn",       "ab_g_dyn__visit_age",                ses_y4),     # VERIFY
-  demo_sex_v2            = list("ab_g_stc",       "ab_g_stc__cohort_sex",               NULL),       # VERIFY
-  demo_prnt_age_v2       = list("ab_p_demo",      "ab_p_demo__age__prnt",               ses_latest), # VERIFY
-  demo_prnt_gender_id_v2 = list("ab_p_demo",      "ab_p_demo__gender__prnt",            ses_latest), # VERIFY
-  demo_prnt_ed_v2_2yr_l  = list("ab_p_demo",      "ab_p_demo__edu__prnt",               ses_latest), # VERIFY
-  demo_prtnr_ed_v2_2yr_l = list("ab_p_demo",      "ab_p_demo__edu__prtnr",              ses_latest), # VERIFY
-  demo_comb_income_v2    = list("ab_p_demo",      "ab_p_demo__income__hhold",           ses_latest), # VERIFY
-  demo_origin_v2         = list("ab_p_demo",      "ab_p_demo__origin__child",           ses_latest), # VERIFY
-  mri_info_manufacturer  = list("mr_y_adm__info", "mr_y_adm__info__dev_manufacturer",   ses_y4),     # VERIFY
-  rsfmri_meanmotion      = list("mr_y_qc__motion","mr_y_qc__motion__rsfmri__fd_mean",   ses_y4),     # VERIFY
-  dmri_meanmotion        = list("mr_y_qc__motion","mr_y_qc__motion__dmri__mean",        ses_y4),     # VERIFY
-  site_id_l              = list("ab_g_dyn",       "ab_g_dyn__design_site",              ses_y4),     # VERIFY
-  rel_family_id          = list("ab_g_stc",       "ab_g_stc__design_id__fam",           NULL)        # VERIFY
+  # names checked against the ABCD 7.0 release (0-inspect-release.R, Nov 2026)
+  interview_age          = list("ab_g_dyn",     "ab_g_dyn__visit_age",                 ses_y4),
+  demo_sex_v2            = list("ab_g_stc",     "ab_g_stc__cohort_sex",                NULL),
+  demo_prnt_age_v2       = list("ab_p_demo",    "ab_p_demo__age__slf_001",             ses_latest),
+  demo_prnt_ed_v2_2yr_l  = list("ab_p_demo",    "ab_p_demo__edu__slf_001__v02",        ses_latest), # v02 = item version used from ses-02A on
+  demo_prtnr_ed_v2_2yr_l = list("ab_p_demo",    "ab_p_demo__edu__prtnr_001__v01",      ses_latest), # v01 = version used from ses-02A on
+  demo_comb_income_v2    = list("ab_p_demo",    "ab_p_demo__income__hhold_001__v01",   ses_latest), # v01 = version used from ses-01A on
+  demo_origin_v2         = list("ab_p_demo",    "ab_p_demo__country_001",              ses_baseline), # youth's birth country (baseline only); recoded below to US vs not
+  mri_info_manufacturer  = list("ab_g_dyn",     "ab_g_dyn__design_mr__manufact",       ses_y4),
+  rsfmri_meanmotion      = list("mr_y_qc__mot", "mr_y_qc__mot__rsfmri__mot_mean",      ses_y4),     # mean FD, rs-fMRI
+  dmri_meanmotion        = list("mr_y_qc__mot", "mr_y_qc__mot__dmri__mot_mean",        ses_y4),     # mean FD, dMRI
+  site_id_l              = list("ab_g_dyn",     "ab_g_dyn__design_site",               ses_y4),
+  rel_family_id          = list("ab_g_stc",     "ab_g_stc__design_id__fam",            NULL)
+  # parent gender identity: no such column in the 7.0 ab_p_demo table - dropped
 )
 
-categorical_covars <- c("demo_sex_v2", "demo_prnt_gender_id_v2", "demo_origin_v2", "mri_info_manufacturer")
+# Optional recodes applied in 1a after missing codes are removed (name = function)
+covariate_recode <- list(
+  demo_origin_v2 = function(x) ifelse(is.na(x), NA, ifelse(x == 189, "US", "non-US"))  # 189 = USA incl. territories
+)
+
+categorical_covars <- c("demo_sex_v2", "demo_origin_v2", "mri_info_manufacturer")
 numerical_covars   <- c("interview_age", "demo_prnt_age_v2", "demo_prnt_ed_v2_2yr_l",
                         "demo_prtnr_ed_v2_2yr_l", "demo_comb_income_v2")
 
+# Head motion is an inclusion/exclusion criterion, NOT a covariate: 1a drops
+# anyone above these mean-FD cutoffs (applied to the one shared sample, so the
+# RNI, RND and rs-FC analyses keep the same participants). The motion values
+# are still saved in covariate.csv for describing the sample.
+motion_max_rsfmri <- 0.2   # rs-fMRI mean framewise displacement, mm
+motion_max_dmri   <- 2.0   # dMRI mean framewise displacement, mm (dMRI FD runs ~1 mm, so not on the fMRI scale)
+
 # Regressed out of each block before PLSC (site enters as a factor).
-# Each block gets the motion from its own scan type.
-resid_covars_rsfc   <- c(numerical_covars, "rsfmri_meanmotion", categorical_covars, "site_id_l")
-resid_covars_struct <- c(numerical_covars, "dmri_meanmotion",   categorical_covars, "site_id_l")
+resid_covars_rsfc   <- c(numerical_covars, categorical_covars, "site_id_l")
+resid_covars_struct <- c(numerical_covars, categorical_covars, "site_id_l")
 
 # Fixed-effect covariates in the LMEs (site/family are the random effects).
 lme_numerical_covars   <- c(numerical_covars, "rsfmri_meanmotion", "dmri_meanmotion")
@@ -150,26 +163,30 @@ lme_categorical_covars <- categorical_covars
 # given at every wave - check with 0-inspect-release.R).
 lme_predictor_map <- list(
   # REWARD - BIS/BAS
-  bis_sum            = list("mh_y_bisbas", "mh_y_bisbas__bis_sum",          "reward", "continuous"),             # VERIFY
-  bas_reward_resp    = list("mh_y_bisbas", "mh_y_bisbas__rr_sum",           "reward", "continuous"),             # VERIFY
-  bas_drive          = list("mh_y_bisbas", "mh_y_bisbas__drive_sum",        "reward", "continuous"),             # VERIFY
-  bas_fun_seeking    = list("mh_y_bisbas", "mh_y_bisbas__fs_sum",           "reward", "continuous"),             # VERIFY
+  bis_sum            = list("mh_y_bisbas", "mh_y_bisbas__bis_sum",          "reward", "continuous"),             # checked vs 7.0 (a __v01 version also exists)
+  bas_reward_resp    = list("mh_y_bisbas", "mh_y_bisbas__bas__rr_sum",      "reward", "continuous"),             # checked vs 7.0 (a __v01 version also exists)
+  bas_drive          = list("mh_y_bisbas", "mh_y_bisbas__bas__dr_sum",      "reward", "continuous"),             # checked vs 7.0
+  bas_fun_seeking    = list("mh_y_bisbas", "mh_y_bisbas__bas__fs_sum",      "reward", "continuous"),             # checked vs 7.0
   # REWARD - UPPS-P
-  upps_neg_urgency   = list("mh_y_upps",   "mh_y_upps__nurg_sum",           "reward", "continuous"),             # VERIFY
-  upps_pos_urgency   = list("mh_y_upps",   "mh_y_upps__purg_sum",           "reward", "continuous"),             # VERIFY
-  upps_lack_premed   = list("mh_y_upps",   "mh_y_upps__lpm_sum",            "reward", "continuous"),             # VERIFY
-  upps_lack_persev   = list("mh_y_upps",   "mh_y_upps__lps_sum",            "reward", "continuous"),             # VERIFY
-  upps_sens_seeking  = list("mh_y_upps",   "mh_y_upps__ss_sum",             "reward", "continuous"),             # VERIFY
+  upps_neg_urgency   = list("mh_y_upps",   "mh_y_upps__nurg_sum",           "reward", "continuous"),             # checked vs 7.0
+  upps_pos_urgency   = list("mh_y_upps",   "mh_y_upps__purg_sum",           "reward", "continuous"),             # checked vs 7.0
+  upps_lack_premed   = list("mh_y_upps",   "mh_y_upps__plan_sum",           "reward", "continuous"),             # checked vs 7.0 (lack of planning/premeditation)
+  upps_lack_persev   = list("mh_y_upps",   "mh_y_upps__pers_sum",           "reward", "continuous"),             # checked vs 7.0 (lack of perseverance)
+  upps_sens_seeking  = list("mh_y_upps",   "mh_y_upps__sens_sum",           "reward", "continuous"),             # checked vs 7.0
   # EMOTION REGULATION - ERQ
-  erq_reappraisal    = list("mh_y_erq",    "mh_y_erq__reapp_mean",          "emotion_regulation", "continuous"), # VERIFY
-  erq_suppression    = list("mh_y_erq",    "mh_y_erq__suppr_mean",          "emotion_regulation", "continuous"), # VERIFY
+  erq_reappraisal    = list("mh_y_erq",    "mh_y_erq__reapp_mean",          "emotion_regulation", "continuous"), # checked vs 7.0
+  erq_suppression    = list("mh_y_erq",    "mh_y_erq__suppr_mean",          "emotion_regulation", "continuous"), # checked vs 7.0
   # EMOTION REGULATION - Difficulties in Emotion Regulation (ABCD: parent-report DERS-P)
-  ders_total         = list("mh_p_ders",   "mh_p_ders_sum",                 "emotion_regulation", "continuous"), # VERIFY
+  # 7.0 has no DERS total, only these four subscale means
+  ders_attuned       = list("mh_p_ders",   "mh_p_ders__attun_mean",         "emotion_regulation", "continuous"), # checked vs 7.0
+  ders_catastrophize = list("mh_p_ders",   "mh_p_ders__catast_mean",        "emotion_regulation", "continuous"), # checked vs 7.0
+  ders_distracted    = list("mh_p_ders",   "mh_p_ders__distract_mean",      "emotion_regulation", "continuous"), # checked vs 7.0
+  ders_neg_secondary = list("mh_p_ders",   "mh_p_ders__negscnd_mean",       "emotion_regulation", "continuous"), # checked vs 7.0
   # EXECUTIVE FUNCTION - NIH Toolbox (age-corrected standard scores)
-  nihtb_flanker      = list("nc_y_nihtb",  "nc_y_nihtb__flnkr__agecor",     "executive_function", "continuous"), # VERIFY
-  nihtb_cardsort     = list("nc_y_nihtb",  "nc_y_nihtb__cardsort__agecor",  "executive_function", "continuous"), # VERIFY (may not exist at Y4)
-  nihtb_listsort     = list("nc_y_nihtb",  "nc_y_nihtb__lswmt__agecor",     "executive_function", "continuous"), # VERIFY (may not exist at Y4)
-  nihtb_pattern      = list("nc_y_nihtb",  "nc_y_nihtb__pttcp__agecor",     "executive_function", "continuous")  # VERIFY
+  nihtb_flanker      = list("nc_y_nihtb",  "nc_y_nihtb__flnkr__agecor_score", "executive_function", "continuous"), # checked vs 7.0
+  nihtb_cardsort     = list("nc_y_nihtb",  "nc_y_nihtb__crdst__agecorr_score", "executive_function", "continuous"), # checked vs 7.0; only ~19 at Y4, so skipped by min_n_lme
+  nihtb_listsort     = list("nc_y_nihtb",  "nc_y_nihtb__lswmt__agecor_score", "executive_function", "continuous"), # checked vs 7.0
+  nihtb_pattern      = list("nc_y_nihtb",  "nc_y_nihtb__pttcp__agecor_score", "executive_function", "continuous")  # checked vs 7.0
 )
 lme_predictor_map <- lapply(lme_predictor_map, function(x)
   list(table = x[[1]], col = x[[2]], domain = x[[3]], type = x[[4]]))
@@ -181,10 +198,10 @@ lme_predictor_cats <- lme_predictors[vapply(lme_predictor_map, function(x) x$typ
 # items mapped to sex-specific categories 1 = pre, 2 = early, 3 = mid,
 # 4 = late, 5 = post-pubertal. ABCD stores the female and male category in
 # separate columns; 1a picks the right one for each participant's sex.
-puberty_table     <- "ph_p_pds"                   # VERIFY
+puberty_table     <- "ph_p_pds"                   # VERIFY - table not pulled from the HPC yet
 pds_female_col    <- "ph_p_pds__f_categ"          # VERIFY
 pds_male_col      <- "ph_p_pds__m_categ"          # VERIFY
-sex_female_value  <- 2                            # VERIFY (ABCD: 1 = male, 2 = female)
+sex_female_value  <- 2                            # checked vs 7.0 (ab_g_stc__cohort_sex: 1 = male, 2 = female)
 # Derived in 1a-extract-abcd.R -> derivatives/puberty.csv
 #   pds_stage  : PDS category at Year 4 (1-5)                              [primary moderator]
 #   pds_tempo  : (stage at Y4 - stage at baseline) / years between visits
@@ -219,7 +236,7 @@ min_n_lme <- 100   # skip a model if fewer participants than this have the predi
 # ---- 8. PLSC settings --------------------------------------------------------
 # Permutation-p threshold for a significant dimension. With only 100 local
 # permutations the smallest possible p is 0.01, so the local test uses 0.05.
-sig_alpha        <- if (PLSC_ENV == "hpc") 0.01 else 0.05
+sig_alpha        <- as.numeric(Sys.getenv("PLSC_SIG_ALPHA", unset = if (PLSC_ENV == "hpc") 0.01 else 0.05))
 nf2keep          <- 5      # dimensions carried into the bootstrap
 br_threshold     <- 2.5    # |bootstrap ratio| for a feature to be "significant"
 max_dims_to_plot <- 4
@@ -260,7 +277,9 @@ read_abcd_table <- function(table, cols = NULL, dir = release_dir, format = data
   tsv <- file.path(dir, paste0(table, ".tsv"))
   use_parquet <- format == "parquet" && file.exists(pq) && requireNamespace("arrow", quietly = TRUE)
   if (use_parquet) {
-    df <- as.data.frame(arrow::read_parquet(pq, col_select = if (is.null(cols)) NULL else tidyselect::any_of(cols)))
+    # newer arrow reads zero columns if col_select = NULL is passed explicitly
+    df <- if (is.null(cols)) as.data.frame(arrow::read_parquet(pq))
+          else as.data.frame(arrow::read_parquet(pq, col_select = tidyselect::any_of(cols)))
     src <- pq
   } else if (file.exists(tsv)) {
     df <- utils::read.delim(tsv, sep = "\t", header = TRUE, stringsAsFactors = FALSE,

@@ -39,13 +39,10 @@ release_dir <- if (PLSC_ENV == "hpc") HPC_RELEASE_DIR else file.path(project_dir
 
 # All outputs. Shared extraction files go here directly; each PLSC gets its own
 # sub-folder, derivatives/plsc-rni/ and derivatives/plsc-rnd/ (see plsc_dirs()).
-# Optional analysis variant (PLSC_VARIANT). Each variant writes to its own
-# sub-folder of derivatives/ so it never overwrites the main results.
-#   ""                   -> main analysis, derivatives/
-#   "katie-baseline-vars"-> Bottenhorn et al. (bioRxiv 2026) covariates, derivatives/katie-baseline-vars/
-PLSC_VARIANT <- Sys.getenv("PLSC_VARIANT", unset = "")
-deriv_dir <- file.path(project_dir, "derivatives")
-if (nzchar(PLSC_VARIANT)) deriv_dir <- file.path(deriv_dir, PLSC_VARIANT)
+# deriv_dir <- file.path(project_dir, "derivatives")                        # main analysis
+# deriv_dir <- file.path(project_dir, "derivatives", "katie-baseline-vars")  # Bottenhorn et al. covariates, baseline
+deriv_dir <- file.path(project_dir, "derivatives", "katie-y4-vars")          # Bottenhorn et al. covariates, Year 4
+# deriv_dir <- file.path(project_dir, "derivatives", "katie-Y2-vars")        # Bottenhorn et al. covariates, Year 2
 dir.create(deriv_dir, showWarnings = FALSE, recursive = TRUE)
 
 # Headless HPC nodes have no X11 display; cairo lets png() work without one.
@@ -71,7 +68,15 @@ ses_baseline <- "ses-00A"                                                   # ch
 # "Most recent available, up to Year 4": tried in this order, first non-missing wins
 ses_latest   <- c("ses-04A", "ses-03A", "ses-02A", "ses-01A", "ses-00A")   # checked vs 7.0
 
-session_brain <- ses_y4     # imaging (rs-FC, RNI, RND, motion, QC, scanner)
+session_brain <- ses_y4        # imaging (rs-FC, RNI, RND, motion, QC, scanner) - Year 4 (katie-y4-vars)
+# session_brain <- ses_baseline  # baseline (katie-baseline-vars), as in Bottenhorn et al.
+# session_brain <- "ses-02A"      # Year 2 (katie-Y2-vars)
+# sessions up to and including session_brain, most recent first (baseline -> ses-00A only)
+ses_upto_brain <- ses_latest[match(session_brain, ses_latest):length(ses_latest)]
+# Sites dropped from the sample (ab_g_dyn__design_site codes). 15 = UPMC, excluded at
+# baseline by Bottenhorn et al. for hardware issues. Leave empty (c()) for Year 4.
+# exclude_sites <- c(15)   # baseline
+exclude_sites <- c()        # Year 2 / Year 4: site 15 kept (its exclusion was for baseline hardware issues)
 session_lme   <- ses_y4     # reward / ER / EF measures
 
 # Codes that mean "missing" in ABCD questionnaires. Applied to covariates and
@@ -124,29 +129,34 @@ qc_flags <- c(
 # The session each value came from is saved in covariate-sessions.csv.
 covariate_map <- list(
   # names checked against the ABCD 7.0 release (0-inspect-release.R, Nov 2026)
-  interview_age          = list("ab_g_dyn",     "ab_g_dyn__visit_age",                 ses_y4),
+  interview_age          = list("ab_g_dyn",     "ab_g_dyn__visit_age",                 session_brain),
   demo_sex_v2            = list("ab_g_stc",     "ab_g_stc__cohort_sex",                NULL),
-  demo_prnt_age_v2       = list("ab_p_demo",    "ab_p_demo__age__slf_001",             ses_latest),
-  demo_prnt_ed_v2_2yr_l  = list("ab_p_demo",    "ab_p_demo__edu__slf_001__v02",        ses_latest), # v02 = item version used from ses-02A on
-  demo_prtnr_ed_v2_2yr_l = list("ab_p_demo",    "ab_p_demo__edu__prtnr_001__v01",      ses_latest), # v01 = version used from ses-02A on
-  demo_comb_income_v2    = list("ab_p_demo",    "ab_p_demo__income__hhold_001__v01",   ses_latest), # v01 = version used from ses-01A on
-  demo_origin_v2         = list("ab_p_demo",    "ab_p_demo__country_001",              ses_baseline), # youth's birth country (baseline only); recoded below to US vs not
-  mri_info_manufacturer  = list("ab_g_dyn",     "ab_g_dyn__design_mr__manufact",       ses_y4),
-  rsfmri_meanmotion      = list("mr_y_qc__mot", "mr_y_qc__mot__rsfmri__mot_mean",      ses_y4),     # mean FD, rs-fMRI
-  dmri_meanmotion        = list("mr_y_qc__mot", "mr_y_qc__mot__dmri__mot_mean",        ses_y4),     # mean FD, dMRI
-  site_id_l              = list("ab_g_dyn",     "ab_g_dyn__design_site",               ses_y4),
+  # demo_prnt_age_v2     = list("ab_p_demo",    "ab_p_demo__age__slf_001",             ses_latest),
+  # demo_prnt_ed_v2_2yr_l = list("ab_p_demo",    "ab_p_demo__edu__slf_001__v02",        ses_latest), # v02 = item version used from ses-02A on
+  # demo_prtnr_ed_v2_2yr_l = list("ab_p_demo",    "ab_p_demo__edu__prtnr_001__v01",      ses_latest), # v01 = version used from ses-02A on
+  # demo_comb_income_v2  = list("ab_p_demo",    "ab_p_demo__income__hhold_001__v01",   ses_latest), # v01 = version used from ses-01A on
+  # demo_origin_v2       = list("ab_p_demo",    "ab_p_demo__country_001",              ses_baseline), # youth's birth country (baseline only); recoded below to US vs not
+  handedness             = list("nc_y_ehis",    "nc_y_ehis_score",                     ses_upto_brain), # Edinburgh: 1 right, 2 left, 3 mixed (Bottenhorn et al.)
+  mri_info_manufacturer  = list("ab_g_dyn",     "ab_g_dyn__design_mr__manufact",       session_brain),
+  rsfmri_meanmotion      = list("mr_y_qc__mot", "mr_y_qc__mot__rsfmri__mot_mean",      session_brain),     # mean FD, rs-fMRI
+  dmri_meanmotion        = list("mr_y_qc__mot", "mr_y_qc__mot__dmri__mot_mean",        session_brain),     # mean FD, dMRI
+  site_id_l              = list("ab_g_dyn",     "ab_g_dyn__design_site",               session_brain),
   rel_family_id          = list("ab_g_stc",     "ab_g_stc__design_id__fam",            NULL)
   # parent gender identity: no such column in the 7.0 ab_p_demo table - dropped
 )
 
 # Optional recodes applied in 1a after missing codes are removed (name = function)
 covariate_recode <- list(
-  demo_origin_v2 = function(x) ifelse(is.na(x), NA, ifelse(x == 189, "US", "non-US"))  # 189 = USA incl. territories
+  # demo_origin_v2 = function(x) ifelse(is.na(x), NA, ifelse(x == 189, "US", "non-US"))  # 189 = USA incl. territories
 )
 
-categorical_covars <- c("demo_sex_v2", "demo_origin_v2", "mri_info_manufacturer")
-numerical_covars   <- c("interview_age", "demo_prnt_age_v2", "demo_prnt_ed_v2_2yr_l",
-                        "demo_prtnr_ed_v2_2yr_l", "demo_comb_income_v2")
+# Bottenhorn et al. covariates: age, sex, handedness, site, scanner manufacturer
+categorical_covars <- c("demo_sex_v2", "handedness", "mri_info_manufacturer")
+numerical_covars   <- c("interview_age")
+# Original (extra SES/demographic covariates) - uncomment to go back:
+# categorical_covars <- c("demo_sex_v2", "demo_origin_v2", "mri_info_manufacturer")
+# numerical_covars   <- c("interview_age", "demo_prnt_age_v2", "demo_prnt_ed_v2_2yr_l",
+#                         "demo_prtnr_ed_v2_2yr_l", "demo_comb_income_v2")
 
 # Head motion is an inclusion/exclusion criterion, NOT a covariate: 1a drops
 # anyone above these mean-FD cutoffs (applied to the one shared sample, so the
@@ -158,30 +168,6 @@ motion_max_dmri   <- 2.0   # dMRI mean framewise displacement, mm (dMRI FD runs 
 # Regressed out of each block before PLSC (site enters as a factor).
 resid_covars_rsfc   <- c(numerical_covars, categorical_covars, "site_id_l")
 resid_covars_struct <- c(numerical_covars, categorical_covars, "site_id_l")
-
-# ---- 6b. Variant: Bottenhorn et al. covariates ------------------------------------
-# Same covariates as Bottenhorn et al. (bioRxiv 2026): age, sex, handedness,
-# site, scanner manufacturer. Head motion stays an exclusion criterion only
-# (cutoffs above), so it is kept in covariate_map for the exclusion step but
-# not regressed out. Parent age/education, partner education, income and birth
-# country are dropped, so they no longer restrict the sample either.
-if (PLSC_VARIANT == "katie-baseline-vars") {
-  covariate_map <- list(
-    interview_age         = covariate_map$interview_age,
-    demo_sex_v2           = covariate_map$demo_sex_v2,
-    handedness            = list("nc_y_ehis", "nc_y_ehis_score", ses_latest),  # Edinburgh: 1 right, 2 left, 3 mixed; Y4, else baseline
-    mri_info_manufacturer = covariate_map$mri_info_manufacturer,
-    rsfmri_meanmotion     = covariate_map$rsfmri_meanmotion,     # exclusion only
-    dmri_meanmotion       = covariate_map$dmri_meanmotion,       # exclusion only
-    site_id_l             = covariate_map$site_id_l,
-    rel_family_id         = covariate_map$rel_family_id
-  )
-  covariate_recode    <- list()
-  categorical_covars  <- c("demo_sex_v2", "handedness", "mri_info_manufacturer")
-  numerical_covars    <- c("interview_age")
-  resid_covars_rsfc   <- c(numerical_covars, categorical_covars, "site_id_l")
-  resid_covars_struct <- c(numerical_covars, categorical_covars, "site_id_l")
-}
 
 # Fixed-effect covariates in the LMEs (site/family are the random effects).
 lme_numerical_covars   <- c(numerical_covars, "rsfmri_meanmotion", "dmri_meanmotion")
@@ -323,5 +309,5 @@ read_abcd_table <- function(table, cols = NULL, dir = release_dir, format = data
   df
 }
 
-message(sprintf("[config] env=%s | variant=%s | release=%s | out=%s | brain=%s | nIter=%d",
-                PLSC_ENV, if (nzchar(PLSC_VARIANT)) PLSC_VARIANT else "main", release_dir, deriv_dir, session_brain, n_iter_perm))
+message(sprintf("[config] env=%s | release=%s | out=%s | brain=%s | nIter=%d",
+                PLSC_ENV, release_dir, deriv_dir, session_brain, n_iter_perm))

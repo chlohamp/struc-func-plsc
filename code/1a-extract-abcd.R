@@ -165,6 +165,12 @@ mot_ok <- covar[[id_col]][!is.na(covar$rsfmri_meanmotion) & covar$rsfmri_meanmot
 ids <- intersect(ids, mot_ok)
 note(sprintf("rs-fMRI mean FD <= %.2f mm and dMRI mean FD <= %.2f mm", motion_max_rsfmri, motion_max_dmri), length(ids))
 
+if (exists("exclude_sites") && length(exclude_sites)) {
+  site_ok <- covar[[id_col]][!is.na(covar$site_id_l) & !(covar$site_id_l %in% exclude_sites)]
+  ids <- intersect(ids, site_ok)
+  note(sprintf("not at excluded site(s) %s", paste(exclude_sites, collapse = ", ")), length(ids))
+}
+
 for (k in names(brain)) {
   b <- brain[[k]]
   ids <- intersect(ids, b[[id_col]][complete.cases(b)])

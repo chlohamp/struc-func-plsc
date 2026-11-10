@@ -170,7 +170,9 @@ resid_covars_rsfc   <- c(numerical_covars, categorical_covars, "site_id_l")
 resid_covars_struct <- c(numerical_covars, categorical_covars, "site_id_l")
 
 # Fixed-effect covariates in the LMEs (site/family are the random effects).
-lme_numerical_covars   <- c(numerical_covars, "rsfmri_meanmotion", "dmri_meanmotion")
+# Motion is an exclusion criterion only (as in the PLSC), not an LME covariate:
+# lme_numerical_covars <- c(numerical_covars, "rsfmri_meanmotion", "dmri_meanmotion")
+lme_numerical_covars   <- numerical_covars
 lme_categorical_covars <- categorical_covars
 
 # ---- 7. LME predictors (Year 4) ----------------------------------------------

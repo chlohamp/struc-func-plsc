@@ -4,14 +4,14 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=32G
-#SBATCH --account=iacc_nbc
-#SBATCH --qos=pq_nbc
-#SBATCH --partition=IB_44C_512G
-#SBATCH --output=/home/data/nbc/misc-projects/struc-func-plsc/log/%x_%j.out
-#SBATCH --error=/home/data/nbc/misc-projects/struc-func-plsc/log/%x_%j.err
+#SBATCH --account=acc_nbc
+#SBATCH --qos=highmem1
+#SBATCH --partition=highmem1-sapphirerapids
+#SBATCH --output=/home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/log/%x_%j.out
+#SBATCH --error=/home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/log/%x_%j.err
 
 # Step 1a: read ABCD 7.0 tables -> clean-rsfc.csv, clean-smri.csv, covariate.csv, lme-measures.csv
-source /home/data/nbc/misc-projects/struc-func-plsc/code/hpc/hpc-env.sh
+source /home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/hpc-env.sh
 
 run_r Rscript 1a-extract-abcd.R
 status=$?

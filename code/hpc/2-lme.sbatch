@@ -5,11 +5,11 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=32G
-#SBATCH --account=iacc_nbc
-#SBATCH --qos=pq_nbc
-#SBATCH --partition=IB_44C_512G
-#SBATCH --output=/home/data/nbc/misc-projects/struc-func-plsc/log/%x_%A_%a.out
-#SBATCH --error=/home/data/nbc/misc-projects/struc-func-plsc/log/%x_%A_%a.err
+#SBATCH --account=acc_nbc
+#SBATCH --qos=highmem1
+#SBATCH --partition=highmem1-sapphirerapids
+#SBATCH --output=/home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/log/%x_%A_%a.out
+#SBATCH --error=/home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/log/%x_%A_%a.err
 
 # Step 2: for one PLSC per array task (0 = RNI, 1 = RND), build per-dimension
 # data, then
@@ -18,7 +18,7 @@
 #   2c-plsc-puberty   LMEs: scores ~ puberty (x sex); scores ~ measure x pubertal stage
 BLOCKS=(rni rnd)
 export PLSC_BLOCK=${BLOCKS[${SLURM_ARRAY_TASK_ID:-0}]}
-source /home/data/nbc/misc-projects/struc-func-plsc/code/hpc/hpc-env.sh
+source /home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/hpc-env.sh
 echo "PLSC block: rs-FC x ${PLSC_BLOCK}"
 
 set -e

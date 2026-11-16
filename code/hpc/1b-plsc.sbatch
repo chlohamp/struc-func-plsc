@@ -5,17 +5,17 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=64G
-#SBATCH --account=iacc_nbc
-#SBATCH --qos=pq_nbc
-#SBATCH --partition=IB_44C_512G
-#SBATCH --output=/home/data/nbc/misc-projects/struc-func-plsc/log/%x_%A_%a.out
-#SBATCH --error=/home/data/nbc/misc-projects/struc-func-plsc/log/%x_%A_%a.err
+#SBATCH --account=acc_nbc
+#SBATCH --qos=highmem1
+#SBATCH --partition=highmem1-sapphirerapids
+#SBATCH --output=/home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/log/%x_%A_%a.out
+#SBATCH --error=/home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/log/%x_%A_%a.err
 
 # Step 1b: two separate PLSCs, run in parallel as a 2-task array
 #   task 0 -> rs-FC x RNI (cellular density)
 #   task 1 -> rs-FC x RND (neurite density)
 # Each: residualize, PLSC, 10,000 permutations + 10,000 bootstraps.
-# Run just one with:  sbatch --array=1 hpc/1b-plsc.sbatch
+# Run just one with:  sbatch --array=1 1b-plsc.sbatch
 #
 # An .Rmd can't be run with "Rscript file.Rmd". It has to be *rendered*, which
 # runs every chunk top to bottom and writes an HTML report. Rendering needs
@@ -23,7 +23,7 @@
 # knitr::purl() and run that instead (same results, just no HTML report).
 BLOCKS=(rni rnd)
 export PLSC_BLOCK=${BLOCKS[${SLURM_ARRAY_TASK_ID:-0}]}
-source /home/data/nbc/misc-projects/struc-func-plsc/code/hpc/hpc-env.sh
+source /home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/hpc-env.sh
 echo "PLSC block: rs-FC x ${PLSC_BLOCK}"
 
 run_r Rscript -e "

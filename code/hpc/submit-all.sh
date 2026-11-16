@@ -1,13 +1,27 @@
 #!/bin/bash
+#SBATCH --job-name=sfp-submit-all
+#SBATCH --time=00:10:00
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=1G
+#SBATCH --account=acc_nbc
+#SBATCH --qos=highmem1
+#SBATCH --partition=highmem1-sapphirerapids
+#SBATCH --output=/home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/log/%x_%j.out
+#SBATCH --error=/home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/log/%x_%j.err
 # =============================================================================
 # submit-all.sh - submit the whole pipeline as a chain of SLURM jobs.
 # Each step only starts if the steps it needs finished without error.
 #
-#   cd /home/data/nbc/misc-projects/struc-func-plsc/code
-#   bash hpc/submit-all.sh            # run everything
-#   bash hpc/submit-all.sh 1b         # start from the PLSCs (extraction already done)
-#   bash hpc/submit-all.sh 2          # LMEs + ML only (PLSCs already done)
-#   bash hpc/submit-all.sh 3          # ML only
+#   cd /home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code
+#   sbatch submit-all.sh            # run everything
+#   sbatch submit-all.sh 1b         # start from the PLSCs (extraction already done)
+#   sbatch submit-all.sh 2          # LMEs + ML only (PLSCs already done)
+#   sbatch submit-all.sh 3          # ML only
+#
+# Runs the variant in PLSC_VARIANT (default katie-y4-vars), e.g. Year 4 LMEs only:
+#   PLSC_VARIANT=katie-y4-vars sbatch submit-all.sh 2
+# For PLSC-only runs of baseline / Y2 / Y4 use submit-katie.sh instead.
 #
 # Dependency graph:
 #   1a extract -> 1b PLSC [rni, rnd] -> 2 LMEs [rni, rnd] -> 3b mixed-model trees [rni, rnd]
@@ -15,10 +29,12 @@
 #                                    -> 3a random forest [one task per measure] -> 3c ML summary
 #
 # Check on jobs:   squeue -u $USER
-# Logs:            /home/data/nbc/misc-projects/struc-func-plsc/log/
+# Logs:            /home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/log/
 # =============================================================================
-HPC_DIR=/home/data/nbc/misc-projects/struc-func-plsc/code/hpc
-mkdir -p /home/data/nbc/misc-projects/struc-func-plsc/log   # SLURM won't create the log dir itself
+HPC_DIR=/home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code
+mkdir -p /home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code/log   # SLURM won't create the log dir itself
+export PLSC_VARIANT=${PLSC_VARIANT:-katie-y4-vars}
+echo "Variant: ${PLSC_VARIANT}"
 
 START=${1:-1a}
 after() { [ -n "$1" ] && echo "--dependency=afterok:$1"; }

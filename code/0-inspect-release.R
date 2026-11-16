@@ -6,7 +6,7 @@
 # a few search terms so you can fill in the  # VERIFY  entries in config.R.
 #
 # Run on the HPC (login node is fine, it only reads headers):
-#   cd /home/data/nbc/misc-projects/struc-func-plsc/code
+#   cd /home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc/code
 #   singularity exec --cleanenv -B /home/data/nbc $SIF Rscript 0-inspect-release.R
 #   # optional extra search terms:
 #   ... Rscript 0-inspect-release.R bisbas erq flnkr

@@ -5,3 +5,7 @@
 .DS_Store
 /.venv/
 /gordon_networks_222.nii
+/code/make-ohbm-circular-parts.R
+/code/make-ohbm-fig1-versions.py
+/code/make-ohbm-figures.py
+/code/make-schematic-panelA.py

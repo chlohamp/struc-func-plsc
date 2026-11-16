@@ -25,7 +25,7 @@
 # =============================================================================
 
 # ---- 1. Where am I running? --------------------------------------------------
-HPC_PROJECT_DIR <- "/home/data/nbc/misc-projects/struc-func-plsc"
+HPC_PROJECT_DIR <- "/home/data/nbc/Laird_ABCD/data-analyses/PLSC_StrucFunc"
 HPC_RELEASE_DIR <- "/home/data/nbc/Laird_ABCD/7_0_data/tabulated/release_abcd"
 
 PLSC_ENV <- Sys.getenv("PLSC_ENV", unset = if (dir.exists("/home/data/nbc")) "hpc" else "local")
@@ -39,10 +39,20 @@ release_dir <- if (PLSC_ENV == "hpc") HPC_RELEASE_DIR else file.path(project_dir
 
 # All outputs. Shared extraction files go here directly; each PLSC gets its own
 # sub-folder, derivatives/plsc-rni/ and derivatives/plsc-rnd/ (see plsc_dirs()).
-# deriv_dir <- file.path(project_dir, "derivatives")                        # main analysis
-# deriv_dir <- file.path(project_dir, "derivatives", "katie-baseline-vars")  # Bottenhorn et al. covariates, baseline
-deriv_dir <- file.path(project_dir, "derivatives", "katie-y4-vars")          # Bottenhorn et al. covariates, Year 4
-# deriv_dir <- file.path(project_dir, "derivatives", "katie-Y2-vars")        # Bottenhorn et al. covariates, Year 2
+# Which analysis (all use the Bottenhorn et al. covariates in section 6).
+# Pick with the PLSC_VARIANT env var (the HPC submit scripts set it); default Year 4.
+#   katie-baseline-vars  imaging at ses-00A, site 15 (UPMC) excluded
+#   katie-Y2-vars        imaging at ses-02A
+#   katie-y4-vars        imaging at ses-04A
+PLSC_VARIANT <- Sys.getenv("PLSC_VARIANT", unset = "katie-y4-vars")
+variant_settings <- list(
+  "katie-baseline-vars" = list(session_brain = "ses-00A", exclude_sites = c(15)),
+  "katie-Y2-vars"       = list(session_brain = "ses-02A", exclude_sites = c()),
+  "katie-y4-vars"       = list(session_brain = "ses-04A", exclude_sites = c())
+)
+if (!PLSC_VARIANT %in% names(variant_settings))
+  stop("Unknown PLSC_VARIANT '", PLSC_VARIANT, "'. Use one of: ", paste(names(variant_settings), collapse = ", "))
+deriv_dir <- file.path(project_dir, "derivatives", PLSC_VARIANT)
 dir.create(deriv_dir, showWarnings = FALSE, recursive = TRUE)
 
 # Headless HPC nodes have no X11 display; cairo lets png() work without one.
@@ -68,15 +78,13 @@ ses_baseline <- "ses-00A"                                                   # ch
 # "Most recent available, up to Year 4": tried in this order, first non-missing wins
 ses_latest   <- c("ses-04A", "ses-03A", "ses-02A", "ses-01A", "ses-00A")   # checked vs 7.0
 
-session_brain <- ses_y4        # imaging (rs-FC, RNI, RND, motion, QC, scanner) - Year 4 (katie-y4-vars)
-# session_brain <- ses_baseline  # baseline (katie-baseline-vars), as in Bottenhorn et al.
-# session_brain <- "ses-02A"      # Year 2 (katie-Y2-vars)
+session_brain <- variant_settings[[PLSC_VARIANT]]$session_brain   # imaging (rs-FC, RNI, RND, motion, QC, scanner); set by PLSC_VARIANT
 # sessions up to and including session_brain, most recent first (baseline -> ses-00A only)
 ses_upto_brain <- ses_latest[match(session_brain, ses_latest):length(ses_latest)]
 # Sites dropped from the sample (ab_g_dyn__design_site codes). 15 = UPMC, excluded at
 # baseline by Bottenhorn et al. for hardware issues. Leave empty (c()) for Year 4.
-# exclude_sites <- c(15)   # baseline
-exclude_sites <- c()        # Year 2 / Year 4: site 15 kept (its exclusion was for baseline hardware issues)
+# Set by PLSC_VARIANT: c(15) at baseline; Year 2 / Year 4 keep site 15.
+exclude_sites <- variant_settings[[PLSC_VARIANT]]$exclude_sites
 session_lme   <- ses_y4     # reward / ER / EF measures
 
 # Codes that mean "missing" in ABCD questionnaires. Applied to covariates and
@@ -311,5 +319,6 @@ read_abcd_table <- function(table, cols = NULL, dir = release_dir, format = data
   df
 }
 
-message(sprintf("[config] env=%s | release=%s | out=%s | brain=%s | nIter=%d",
-                PLSC_ENV, release_dir, deriv_dir, session_brain, n_iter_perm))
+message(sprintf("[config] env=%s | variant=%s | release=%s | out=%s | brain=%s | excl sites=%s | nIter=%d",
+                PLSC_ENV, PLSC_VARIANT, release_dir, deriv_dir, session_brain,
+                if (length(exclude_sites)) paste(exclude_sites, collapse = ",") else "none", n_iter_perm))

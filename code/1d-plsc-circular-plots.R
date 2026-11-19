@@ -90,10 +90,33 @@ dk_short <- c(
   superiorparietal = "SPL", inferiorparietal = "IPL", precuneus = "precuneus",
   lingual = "lingual", pericalcarine = "pericalc", cuneus = "cuneus", lateraloccipital = "LOC"
 )
+# Compact names for the region barplot (bar_short_labels = TRUE), <= 4 characters. The long names set how
+# far the text sticks out, which sets how big the text can be.
+dk_compact <- c(
+  frontalpole = "FP", superiorfrontal = "SFG", rostralmiddlefrontal = "rMFG",
+  caudalmiddlefrontal = "cMFG", parsorbitalis = "pOrb", parstriangularis = "pTri",
+  parsopercularis = "pOp", lateralorbitofrontal = "lOFC", medialorbitofrontal = "mOFC",
+  precentral = "PrCG", paracentral = "PCL", insula = "Ins",
+  rostralanteriorcingulate = "rACC", caudalanteriorcingulate = "cACC", posteriorcingulate = "PCC",
+  isthmuscingulate = "iCC", temporalpole = "TP", superiortemporal = "STG",
+  transversetemporal = "TTG", bankssts = "bSTS", middletemporal = "MTG",
+  inferiortemporal = "ITG", entorhinal = "ERC", parahippocampal = "PHG",
+  fusiform = "FG", postcentral = "PoCG", supramarginal = "SMG",
+  superiorparietal = "SPL", inferiorparietal = "IPL", precuneus = "PCun",
+  lingual = "LG", pericalcarine = "Peri", cuneus = "Cun", lateraloccipital = "LOC"
+)
 # light tints of the lobe hue families used for DK regions in plot-gord-desik / 1c
 # (each is 30% of the way from the family's palest shade toward its mid shade)
 lobe_cols <- c(Frontal = "#B5D1D7", Insula = "#F3E2B2", Cingulate = "#F6B1A9",
                Temporal = "#C5DEBD", Parietal = "#CEC3E1", Occipital = "#F4CCAA")
+
+# Font for every plot in this script (chords, bars, colour bar). Any installed font name works
+# for PNG/SVG and for Cairo PDFs. R's plain pdf() device only knows its built-in fonts, so when
+# Cairo is missing the PDFs fall back to font_family_pdf ("serif" = Times, "sans" = Helvetica).
+font_family     <- "sans"          # "sans" = R's default font (the original look)
+font_family_pdf <- "sans"
+fam_for <- function(dev) if (dev == "pdf" && !isTRUE(capabilities("cairo"))) font_family_pdf else font_family
+cur_family <- font_family          # set per output device in the Run section
 
 # Titles and subtitles above each figure (TRUE to show)
 show_titles <- FALSE
@@ -102,7 +125,10 @@ show_titles <- FALSE
 show_within_ring <- FALSE
 
 # Text size multiplier for the rs-FC chord diagrams (1 = original sizes)
-rsfc_text_scale <- 1.8
+rsfc_text_scale <- 2.6
+# How far out the grey network-family arcs and their labels sit (radius; the network
+# ring's outer edge is 1). Push out if bigger text runs into them.
+rsfc_arc_radius <- 1.30
 
 # Chord look. The colours stay the same; these make strong vs weak easier to tell apart.
 #   chord_alpha:       1 = solid (transparency was washing the dark shades toward the light ones)
@@ -121,6 +147,27 @@ chord_outline     <- "grey"
 # so red/blue read the same as in the chord plot).
 bar_style <- "clean"
 bar_fill  <- "br"
+# Clean-style layout knobs
+#   bar_hole:       empty centre, as a fraction of br_lim (the old fixed 0.7 * lim plus a full -lim
+#                   inward range is now: lowest bar of THIS plot (or -threshold) minus bar_hole * lim)
+#   bar_gap_hemi:   empty slots between the hemispheres at the top and bottom (was 5)
+#   bar_label_size: region-name text size (ggplot mm; was 4). Tick and Left/Right text scale with it.
+#   bar_gap_lobe:   empty slots between lobes (was 1); the lobe colour band still separates them
+#   bar_short_labels: TRUE = compact names (<= 4 characters, see dk_compact) so the text can be
+#                   bigger; FALSE = the longer dk_short names
+bar_hole         <- 0.2
+bar_gap_hemi     <- 1.8
+bar_gap_lobe     <- 0.4
+bar_label_size   <- 6.8
+bar_short_labels <- TRUE
+#   bar_band_width: thickness of the lobe colour band, as a fraction of br_lim (was 0.09)
+bar_band_width   <- 0.035
+#   bar_grid_col / bar_grid_lwd: solid background rings at round BR values (was grey88 / 0.3)
+#   bar_thr_col  / bar_thr_lwd:  dashed rings at +/- br_threshold (was grey55 / 0.3)
+bar_grid_col     <- "grey72"
+bar_grid_lwd     <- 0.55
+bar_thr_col      <- "grey40"
+bar_thr_lwd      <- 0.5
 # Flip each dimension's sign (rs-FC and structure together) to match Bottenhorn et al.,
 # the same rule as make-ohbm-figures.py, make-ohbm-circular-parts.R and 1c-plsc-figures.ipynb:
 #   LD1 = higher RNI/RND across cortex; LD2 = lower posterior RNI / higher posterior RND.
@@ -223,11 +270,12 @@ plot_rsfc_chord <- function(br, pairs, lim, title, subtitle) {
     match(j, ord) - 0.5
   }
 
+  par(family = cur_family)
   par(mar = c(0.5, 0.5, if (nzchar(title) || nzchar(subtitle)) 3.5 + 1.2 * (rsfc_text_scale - 1) else 0.5, 0.5), xpd = NA)
   circos.clear()
   circos.par(start.degree = 90 + 360 / n / 2, clock.wise = TRUE, gap.degree = 2.5,
              cell.padding = c(0, 0, 0, 0), track.margin = c(0.005, 0.005),
-             canvas.xlim = c(-1.45, 1.45), canvas.ylim = c(-1.45, 1.45), points.overflow.warning = FALSE)
+             canvas.xlim = c(-1, 1) * (rsfc_arc_radius + 0.21), canvas.ylim = c(-1, 1) * (rsfc_arc_radius + 0.21), points.overflow.warning = FALSE)
   circos.initialize(factor(nets, levels = nets), xlim = c(0, n - 1))
 
   # Track 1: network blocks + names
@@ -269,12 +317,12 @@ plot_rsfc_chord <- function(br, pairs, lim, title, subtitle) {
     s   <- gordon$abbr[gordon$group == g]
     deg <- c(get.cell.meta.data("cell.start.degree", sector.index = s[1], track.index = 1),
              get.cell.meta.data("cell.end.degree",   sector.index = s[length(s)], track.index = 1))
-    draw.sector(deg[1] - 0.5, deg[2] + 0.5, rou1 = 1.235, rou2 = 1.245, clock.wise = TRUE,
+    draw.sector(deg[1] - 0.5, deg[2] + 0.5, rou1 = rsfc_arc_radius - 0.005, rou2 = rsfc_arc_radius + 0.005, clock.wise = TRUE,
                 col = "grey55", border = NA)
     # label centred on the group: middle of the middle sector, or the edge between the two middle ones
     m <- (length(s) + 1) / 2
     sec <- s[ceiling(m)]; xx <- if (m %% 1 == 0) (n - 1) / 2 else 0
-    circos.text(xx, 5.9, g, sector.index = sec, track.index = 1, facing = "bending.inside",
+    circos.text(xx, (rsfc_arc_radius + 0.105 - 0.93) / 0.07, g, sector.index = sec, track.index = 1, facing = "bending.inside",
                 niceFacing = TRUE, cex = 0.7 * rsfc_text_scale, col = "grey35", font = 3)
   }
   title(main = title, cex.main = 1.05 * rsfc_text_scale, line = 2.2 + 0.8 * (rsfc_text_scale - 1))
@@ -334,14 +382,14 @@ plot_struct_bars_classic <- function(br, regs, lim, title, subtitle) {
   ggplot(df) +
     geom_rect(data = lobes_df, aes(xmin = xmin, xmax = xmax, ymin = band_lo, ymax = band_hi, fill = NULL),
               fill = lobe_cols[lobes_df$lobe], colour = NA) +
-    geom_text(data = lobes_df, aes(x = mid, y = (band_lo + band_hi) / 2, label = short, angle = angle),
+    geom_text(family = cur_family, data = lobes_df, aes(x = mid, y = (band_lo + band_hi) / 2, label = short, angle = angle),
               size = 2.1, colour = "grey25") +
     geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.35) +
     geom_hline(yintercept = c(-br_threshold, br_threshold), colour = "grey40", linewidth = 0.3, linetype = "22") +
     geom_col(aes(x = pos, y = br, fill = fill), width = 0.8, colour = NA) +
-    geom_text(aes(x = pos, y = lab_y, label = label, angle = angle, hjust = hjust),
+    geom_text(family = cur_family, aes(x = pos, y = lab_y, label = label, angle = angle, hjust = hjust),
               size = 2.05, colour = ifelse(df$sig, "grey10", "grey55")) +
-    annotate("text", x = c(x_max * 0.25, x_max * 0.75), y = -lim - hole * 0.25, label = c("Right", "Left"),
+    annotate("text", family = cur_family, x = c(x_max * 0.25, x_max * 0.75), y = -lim - hole * 0.25, label = c("Right", "Left"),
              size = 3.2, fontface = "bold", colour = "grey35") +
     scale_fill_gradientn(colours = c(neg_dark, neg_pale, ns_grey, ns_grey, pos_pale, pos_dark),
                          values = scales::rescale(c(-lim, -br_threshold, -br_threshold + 1e-3,
@@ -351,7 +399,7 @@ plot_struct_bars_classic <- function(br, regs, lim, title, subtitle) {
     scale_y_continuous(limits = c(y_min, y_max), expand = c(0, 0)) +
     coord_polar(start = 0, clip = "off") +
     labs(title = title, subtitle = subtitle) +
-    theme_void(base_size = 10) +
+    theme_void(base_size = 10, base_family = cur_family) +
     theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
           plot.subtitle = element_text(hjust = 0.5, colour = "grey30", size = 8.5),
           legend.title = element_text(size = 8), legend.text = element_text(size = 7),
@@ -368,7 +416,7 @@ plot_struct_bars_clean <- function(br, regs, lim, title, subtitle) {
   lobe_of <- setNames(rep(names(dk_lobes), lengths(dk_lobes)), unlist(dk_lobes))
   df$lobe <- lobe_of[df$region]
 
-  gap_lobe <- 1; gap_hemi <- 5
+  gap_lobe <- bar_gap_lobe; gap_hemi <- bar_gap_hemi
   rows <- list(); pos <- gap_hemi / 2
   for (h in c("rh", "lh")) {
     lobes <- if (h == "rh") names(dk_lobes) else rev(names(dk_lobes))
@@ -387,16 +435,29 @@ plot_struct_bars_clean <- function(br, regs, lim, title, subtitle) {
   x_max <- pos - gap_hemi / 2 + 0.5
 
   df$sig   <- abs(df$br) > br_threshold
-  df$label <- dk_short[df$region]
+  df$label <- if (bar_short_labels) dk_compact[df$region] else dk_short[df$region]
   df$fillc <- if (bar_fill == "lobe") ifelse(df$sig, lobe_bar_cols[df$lobe], ns_grey)
               else br_cols(df$br, lim)
 
   # Radial layout (BR units). Everything outside the bars hugs the outermost bar.
-  hole    <- 0.7 * lim
+  # The centre starts just inside the lowest bar (or the -threshold ring), not at -lim,
+  # so plots with few/no negative bars don't waste the middle.
+  hole    <- bar_hole * lim
   out_top <- max(br_threshold, max(df$br, 0, na.rm = TRUE))   # outer edge of data
-  band_lo <- out_top + 0.06 * lim; band_hi <- band_lo + 0.09 * lim
+  in_bot  <- min(df$br, 0, na.rm = TRUE)                      # inner edge of data
+  band_lo <- out_top + 0.06 * lim; band_hi <- band_lo + bar_band_width * lim
   lab_y   <- band_hi + 0.04 * lim
-  y_min   <- -lim - hole; y_max <- lab_y + 0.75 * lim
+  # Labels sit at the outer edge of the panel; the plot margin is sized to the longest
+  # name, so the label ring is as large as the page allows (more room per label).
+  y_min   <- in_bot - hole; y_max <- lab_y
+  # coord_polar already leaves 10% of the panel around the circle; add margin only if the
+  # labels need more than that. Assumes the 7.2 in square ggsave below.
+  page_mm  <- 7.2 * 25.4
+  lab_mm   <- max(nchar(df$label)) * 0.58 * bar_label_size + 2    # rough text length in mm
+  marg_mm  <- max(1, (lab_mm - 0.1 * page_mm) / 0.8)
+  rad_mm   <- 0.4 * (page_mm - 2 * marg_mm)                         # circle radius on the page
+  # Right / Left in the top corners, ~0.58 of the page width out along the diagonals
+  rl_y     <- y_min + (0.58 * page_mm) / rad_mm * (y_max - y_min)
 
   ang <- 90 - 360 * (df$pos - 0.5) / x_max
   df$hjust <- ifelse(ang < -90, 1, 0)
@@ -410,13 +471,14 @@ plot_struct_bars_clean <- function(br, regs, lim, title, subtitle) {
   lobes_df$short <- ifelse(lobes_df$xmax - lobes_df$xmin >= 3, lobes_df$lobe, substr(lobes_df$lobe, 1, 3))
 
   # Radial scale in the top gap: 0, +/- threshold and round values within the data range
-  lo <- min(df$br, -br_threshold, na.rm = TRUE); hi <- out_top
-  tk <- sort(unique(c(0, -br_threshold, br_threshold, pretty(c(lo, hi), n = 4))))
+  lo <- in_bot; hi <- out_top
+  tk <- sort(unique(c(0, if (lo <= -br_threshold) -br_threshold, br_threshold, pretty(c(lo, hi), n = 3))))
   tk <- tk[tk >= lo - 1e-9 & tk <= hi + 1e-9]
   tk <- tk[!(abs(tk) > 0 & abs(abs(tk) - br_threshold) < 0.6 & abs(tk) != br_threshold)]  # avoid clutter near +/-thr
   ticks <- data.frame(y = tk, lab = ifelse(tk == 0, "0", formatC(tk, format = "fg")))
   # tick labels at the top midline (x = 0 / x_max), slightly into the gap
   ring_df <- data.frame(y = c(-br_threshold, br_threshold))
+  ring_df <- ring_df[ring_df$y >= in_bot - 1e-9, , drop = FALSE]
   grid_df <- data.frame(y = setdiff(tk, c(0, -br_threshold, br_threshold)))
 
   p <- ggplot(df) +
@@ -424,25 +486,26 @@ plot_struct_bars_clean <- function(br, regs, lim, title, subtitle) {
               fill = lobe_cols[lobes_df$lobe], colour = NA) +
     # geom_text(data = lobes_df, aes(x = mid, y = (band_lo + band_hi) / 2, label = short, angle = angle),
     #           size = 2.0, colour = "grey30") +
-    geom_hline(data = grid_df, aes(yintercept = y), colour = "grey88", linewidth = 0.3) +
+    geom_hline(data = grid_df, aes(yintercept = y), colour = bar_grid_col, linewidth = bar_grid_lwd) +
     geom_hline(yintercept = 0, colour = "grey30", linewidth = 0.4) +
-    geom_hline(data = ring_df, aes(yintercept = y), colour = "grey55", linewidth = 0.3, linetype = "22") +
+    geom_hline(data = ring_df, aes(yintercept = y), colour = bar_thr_col, linewidth = bar_thr_lwd, linetype = "22") +
     geom_col(aes(x = pos, y = br), fill = df$fillc, width = 0.78, colour = NA) +
-    geom_text(aes(x = pos, y = lab_y, label = label, angle = angle, hjust = hjust),
-              size = 4, colour = ifelse(df$sig, "grey10", "grey60")) +
-    geom_text(data = ticks, aes(x = 0, y = y, label = lab), size = 4.2, colour = "grey40", hjust = 0.5) +
-    #annotate("text", x = 0, y = lo - 0.12 * lim, label = "BR", size = 1.9, colour = "grey40", fontface = "italic") +
-    annotate("text", x = c(x_max * 0.25, x_max * 0.75), y = y_min + hole * 0.8, label = c("Right", "Left"),
-             size = 4, fontface = "bold", colour = "grey35") +
+    geom_text(family = cur_family, aes(x = pos, y = lab_y, label = label, angle = angle, hjust = hjust),
+              size = bar_label_size, colour = ifelse(df$sig, "grey10", "grey60")) +
+    geom_text(family = cur_family, data = ticks, aes(x = 0, y = y, label = lab), size = 0.85 * bar_label_size, colour = "grey40", hjust = 0.5) +
+    #annotate("text", family = cur_family, x = 0, y = lo - 0.12 * lim, label = "BR", size = 1.9, colour = "grey40", fontface = "italic") +
+    # Right / Left in the top corners, outside the circle (the centre is now too small)
+    annotate("text", family = cur_family, x = c(x_max * 0.125, x_max * 0.875), y = rl_y,
+             label = c("Right", "Left"), size = bar_label_size * 1.1, fontface = "bold", colour = "grey35") +
     scale_x_continuous(limits = c(0, x_max), expand = c(0, 0)) +
-    scale_y_continuous(limits = c(y_min, y_max), expand = c(0, 0)) +
+    scale_y_continuous(limits = c(y_min, y_max), expand = c(0, 0), oob = scales::oob_keep) +
     coord_polar(start = 0, clip = "off") +
     labs(title = title, subtitle = subtitle) +
-    theme_void(base_size = 10) +
+    theme_void(base_size = 10, base_family = cur_family) +
     theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12),
           plot.subtitle = element_text(hjust = 0.5, colour = "grey30", size = 8.5),
           plot.background = element_rect(fill = "white", colour = NA),
-          plot.margin = margin(4, 4, 4, 4))
+          plot.margin = margin(marg_mm, marg_mm, marg_mm, marg_mm, unit = "mm"))
 
   p
 }
@@ -466,7 +529,7 @@ br_colorbar_grob <- function(lim) {
                            name = "Bootstrap\nratio",
                            guide = guide_colourbar(barheight = unit(5, "cm"), barwidth = unit(0.35, "cm"),
                                                    ticks.colour = "grey30")) +
-    theme_void(base_size = 10) +
+    theme_void(base_size = 10, base_family = cur_family) +
     theme(legend.title = element_text(size = 8), legend.text = element_text(size = 7))
   g <- ggplotGrob(p)
   i <- grep("guide-box", g$layout$name)
@@ -490,6 +553,7 @@ if (is.null(br_lim)) {
 }
 message(sprintf("Shared colour limit: +/-%g", br_lim))
 for (dev in devs) {
+  cur_family <- fam_for(dev)
   f <- file.path(deriv_dir, sprintf("circular_colorbar_BR.%s", dev))
   if (dev == "png") open_png(f, width = 450, height = 800, res = 300)
   else if (dev == "svg") svg_device(f, width = 1.5, height = 2.67)
@@ -529,10 +593,11 @@ for (block in blocks_to_run()) {
     sub1   <- sprintf("Chords: between-network rsFC with |BR| > %.1f%s", br_threshold,
                     if (show_within_ring) "   Inner ring: within-network BR" else "")
     for (dev in devs) {
+      cur_family <- fam_for(dev)
       f <- file.path(d$fig, sprintf("circular_rsfc_%s_Dim%d.%s", block, k, dev))
       if (dev == "png") open_png(f, width = 2000, height = 2000, res = 300)
       else if (dev == "svg") svg_device(f, width = 6.67, height = 6.67)
-      else pdf(f, width = 6.67, height = 6.67)
+      else pdf_device(f, width = 6.67, height = 6.67)
       if (show_titles) plot_rsfc_chord(brP, pairs, lim, title1, sub1) else plot_rsfc_chord(brP, pairs, lim, "", "")
       invisible(dev.off())
     }
@@ -540,11 +605,16 @@ for (block in blocks_to_run()) {
     # RNI / RND bars
     title2 <- sprintf("rsFC x %s, Dimension %d%s: %s", toupper(block), k, pct_txt, sb$label)
     sub2   <- sprintf("Bars: regional BR (dashed rings at +/-%.1f; grey = not reliable)", br_threshold)
-    p2 <- if (show_titles) plot_struct_bars(brQ, regs, lim, title2, sub2) else plot_struct_bars(brQ, regs, lim, NULL, NULL)
-    ggsave(file.path(d$fig, sprintf("circular_%s_Dim%d.png", block, k)), p2, width = 7.2, height = 7.2, dpi = 300, bg = "white")
-    ggsave(file.path(d$fig, sprintf("circular_%s_Dim%d.pdf", block, k)), p2, width = 7.2, height = 7.2, device = pdf_device)
-    if (!is.null(svg_device))
-      ggsave(file.path(d$fig, sprintf("circular_%s_Dim%d.svg", block, k)), p2, width = 7.2, height = 7.2, device = svg_device, bg = "white")
+    # built once per device so each gets a font that device can use
+    for (dev in devs) {
+      cur_family <- fam_for(dev)
+      p2 <- if (show_titles) plot_struct_bars(brQ, regs, lim, title2, sub2) else plot_struct_bars(brQ, regs, lim, NULL, NULL)
+      f  <- file.path(d$fig, sprintf("circular_%s_Dim%d.%s", block, k, dev))
+      if (dev == "png") ggsave(f, p2, width = 7.2, height = 7.2, dpi = 300, bg = "white",
+                               device = if (requireNamespace("ragg", quietly = TRUE)) ragg::agg_png else "png")
+      else if (dev == "svg") ggsave(f, p2, width = 7.2, height = 7.2, device = svg_device, bg = "white")
+      else ggsave(f, p2, width = 7.2, height = 7.2, device = pdf_device)
+    }
 
     message(sprintf("  Dim%d (sign %+d): %d/%d rs-FC and %d/%d %s features with |BR| > %.1f -> circular_*_Dim%d.png/.pdf/.svg",
                     k, s, sum(abs(brP) > br_threshold), length(brP), sum(abs(brQ) > br_threshold), length(brQ),

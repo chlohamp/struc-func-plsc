@@ -8,21 +8,21 @@
 # dimension (significant_dimensions.csv, or PLSC_DIMS=1,3) it writes to
 # plsc-<block>/figures/:
 #
-#   circular_rsfc_<block>_Dim<k>.png/.pdf   rs-FC side: chord diagram
+#   circular_rsfc_<block>_Dim<k>.png/.pdf/.svg   rs-FC side: chord diagram
 #       12 Gordon networks ordered along the S-A axis. Each chord is one
 #       between-network connection; only |BR| > br_threshold is drawn,
 #       coloured by its BR. An optional ring inside the network names holds the
 #       within-network BR (show_within_ring). Chord width also grows with |BR| (chord_width_by_br); the layout
 #       is identical across dimensions and PLSCs.
 #
-#   circular_<block>_Dim<k>.png/.pdf        RNI / RND side: circular barplot
+#   circular_<block>_Dim<k>.png/.pdf/.svg        RNI / RND side: circular barplot
 #       68 Desikan regions, right hemisphere on the right and left on the left,
 #       lobes running front (top) to back (bottom). Bar = BR; dashed rings at
 #       +/- br_threshold; bars past the threshold are coloured.
 #
 # Every plot (both PLSCs, every dimension) shares ONE colour scale (br_lim), so
 # the plots carry no colour bar of their own. The bar is saved once as
-#   <variant>/circular_colorbar_BR.png/.pdf   (same style as the region plots)
+#   <variant>/circular_colorbar_BR.png/.pdf/.svg   (same style as the region plots)
 # Each dimension's sign is arbitrary in the SVD, so by default it is flipped to match
 # Bottenhorn et al. (align_signs, below). Read the two plots of a dimension together:
 # red on one side goes with red on the other, blue with blue.
@@ -151,6 +151,15 @@ open_png <- function(f, width, height, res) {
   else png(f, width = width, height = height, res = res)
 }
 pdf_device <- if (isTRUE(capabilities("cairo"))) cairo_pdf else grDevices::pdf
+# SVG (text stays text, so it stays sharp when resized). Prefers svglite (install.packages("svglite"));
+# falls back to grDevices::svg when Cairo is available; otherwise SVGs are skipped with a message.
+svg_device <- if (requireNamespace("svglite", quietly = TRUE)) {
+  function(filename, width, height, ...) svglite::svglite(filename, width = width, height = height)
+} else if (isTRUE(capabilities("cairo"))) {
+  function(filename, width, height, ...) grDevices::svg(filename, width = width, height = height)
+} else NULL
+if (is.null(svg_device)) message("No SVG device: install.packages('svglite') to also save .svg files")
+devs <- c("png", "pdf", if (!is.null(svg_device)) "svg")
 
 # Diverging scale: pale at the threshold, dark at the max; grey = not significant
 neg_dark <- "#08306B"; neg_pale <- "#9ECAE1"; pos_pale <- "#FCBBA1"; pos_dark <- "#67000D"
@@ -480,13 +489,15 @@ if (is.null(br_lim)) {
   br_lim <- if (length(all_br)) max(ceiling(max(abs(all_br), na.rm = TRUE)), ceiling(br_threshold) + 1) else 10
 }
 message(sprintf("Shared colour limit: +/-%g", br_lim))
-for (dev in c("png", "pdf")) {
+for (dev in devs) {
   f <- file.path(deriv_dir, sprintf("circular_colorbar_BR.%s", dev))
-  if (dev == "png") open_png(f, width = 450, height = 800, res = 300) else pdf_device(f, width = 1.5, height = 2.67)
+  if (dev == "png") open_png(f, width = 450, height = 800, res = 300)
+  else if (dev == "svg") svg_device(f, width = 1.5, height = 2.67)
+  else pdf_device(f, width = 1.5, height = 2.67)
   grid::grid.newpage(); grid::grid.draw(br_colorbar_grob(br_lim))
   invisible(dev.off())
 }
-message("Colour bar -> ", file.path(deriv_dir, "circular_colorbar_BR.png/.pdf"))
+message("Colour bar -> ", file.path(deriv_dir, sprintf("circular_colorbar_BR.{%s}", paste(devs, collapse = ","))))
 
 for (block in blocks_to_run()) {
   d  <- plsc_dirs(block)
@@ -514,24 +525,28 @@ for (block in blocks_to_run()) {
     pct_txt <- if (!is.null(pct) && length(pct) >= k) sprintf(" (%.1f%% of covariance)", pct[k]) else ""
 
     # rs-FC chord
-    title1 <- sprintf("rs-FC x %s, Dimension %d%s: functional side", toupper(block), k, pct_txt)
-    sub1   <- sprintf("Chords: between-network rs-FC with |BR| > %.1f%s", br_threshold,
+    title1 <- sprintf("rsFC x %s, Dimension %d%s: functional side", toupper(block), k, pct_txt)
+    sub1   <- sprintf("Chords: between-network rsFC with |BR| > %.1f%s", br_threshold,
                     if (show_within_ring) "   Inner ring: within-network BR" else "")
-    for (dev in c("png", "pdf")) {
+    for (dev in devs) {
       f <- file.path(d$fig, sprintf("circular_rsfc_%s_Dim%d.%s", block, k, dev))
-      if (dev == "png") open_png(f, width = 2000, height = 2000, res = 300) else pdf(f, width = 6.67, height = 6.67)
+      if (dev == "png") open_png(f, width = 2000, height = 2000, res = 300)
+      else if (dev == "svg") svg_device(f, width = 6.67, height = 6.67)
+      else pdf(f, width = 6.67, height = 6.67)
       if (show_titles) plot_rsfc_chord(brP, pairs, lim, title1, sub1) else plot_rsfc_chord(brP, pairs, lim, "", "")
       invisible(dev.off())
     }
 
     # RNI / RND bars
-    title2 <- sprintf("rs-FC x %s, Dimension %d%s: %s", toupper(block), k, pct_txt, sb$label)
+    title2 <- sprintf("rsFC x %s, Dimension %d%s: %s", toupper(block), k, pct_txt, sb$label)
     sub2   <- sprintf("Bars: regional BR (dashed rings at +/-%.1f; grey = not reliable)", br_threshold)
     p2 <- if (show_titles) plot_struct_bars(brQ, regs, lim, title2, sub2) else plot_struct_bars(brQ, regs, lim, NULL, NULL)
     ggsave(file.path(d$fig, sprintf("circular_%s_Dim%d.png", block, k)), p2, width = 7.2, height = 7.2, dpi = 300, bg = "white")
     ggsave(file.path(d$fig, sprintf("circular_%s_Dim%d.pdf", block, k)), p2, width = 7.2, height = 7.2, device = pdf_device)
+    if (!is.null(svg_device))
+      ggsave(file.path(d$fig, sprintf("circular_%s_Dim%d.svg", block, k)), p2, width = 7.2, height = 7.2, device = svg_device, bg = "white")
 
-    message(sprintf("  Dim%d (sign %+d): %d/%d rs-FC and %d/%d %s features with |BR| > %.1f -> circular_*_Dim%d.png/.pdf",
+    message(sprintf("  Dim%d (sign %+d): %d/%d rs-FC and %d/%d %s features with |BR| > %.1f -> circular_*_Dim%d.png/.pdf/.svg",
                     k, s, sum(abs(brP) > br_threshold), length(brP), sum(abs(brQ) > br_threshold), length(brQ),
                     toupper(block), br_threshold, k))
   }
